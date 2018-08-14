@@ -993,10 +993,16 @@ int TSNE::computeGaussianPerplexity(double* X, int N, int D, unsigned int** _row
 		double** _val_P, double perplexity, int K, double sigma, int num_trees, int search_k, unsigned int nthreads) {
 
 	if( access( "temp/val_P.dat", F_OK ) != -1 ) {
-		printf("val_P exists, loading the file.");
+                ifstream file("temp/col_P.dat", ifstream::in | ifstream::binary);
+                file.seekg(0, ios::end);
+                int fileSize = file.tellg();
+                file.close();
+                int numEls = fileSize/4;
+
+		printf("val_P exists, loading the file with %d entries", numEls);
 		*_row_P = (unsigned int*)    malloc((N + 1) * sizeof(unsigned int));
-		*_col_P = (unsigned int*)    calloc(N * K, sizeof(unsigned int));
-		*_val_P = (double*) calloc(N * K, sizeof(double));
+		*_col_P = (unsigned int*)    calloc(numEls, sizeof(unsigned int));
+		*_val_P = (double*) calloc(numEls, sizeof(double));
 		unsigned int* row_P = *_row_P;
 		unsigned int* col_P = *_col_P;
 		double* val_P = *_val_P;
@@ -1009,14 +1015,14 @@ int TSNE::computeGaussianPerplexity(double* X, int N, int D, unsigned int** _row
 		}
 
 		size_t result; // need this to get rid of warnings that otherwise appear
-		result = fread(val_P, sizeof(double), N * K, h);
+		result = fread(val_P, sizeof(double), numEls, h);
 		fclose(h);
 
 		if((h = fopen("temp/col_P.dat", "rb")) == NULL) {
 			printf("Error: could not open data file.\n");
 			return -2;
 		}
-		result = fread(col_P, sizeof(unsigned int), N * K, h);
+		result = fread(col_P, sizeof(unsigned int), numEls, h);
 		fclose(h);
 
 		if((h = fopen("temp/row_P.dat", "rb")) == NULL) {
