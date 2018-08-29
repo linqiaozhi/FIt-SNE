@@ -59,7 +59,7 @@ using namespace std::chrono;
 
 
 int itTest = 0;
-bool measure_accuracy = false;
+bool measure_accuracy = true;
 
 
 double squared_cauchy(double x, double y) {
@@ -450,8 +450,10 @@ int TSNE::run(double *X, int N, int D, double *Y, int no_dims, double perplexity
         }
 
         if (measure_accuracy) {
-            computeGradient(P, row_P, col_P, val_P, Y, N, no_dims, dY, theta);
-            computeFftGradient(P, row_P, col_P, val_P, Y, N, no_dims, dY, nterms, intervals_per_integer,
+
+            auto *dY_test = (double *) malloc(N * no_dims * sizeof(double));
+            computeGradient(P, row_P, col_P, val_P, Y, N, no_dims, dY_test, theta);
+            computeFftGradient(P, row_P, col_P, val_P, Y, N, no_dims, dY_test, nterms, intervals_per_integer,
                                min_num_intervals, nthreads);
             computeExactGradientTest(Y, N, no_dims);
         }
@@ -561,8 +563,7 @@ void TSNE::computeGradient(double *P, unsigned int *inp_row_P, unsigned int *inp
         dC[i] = pos_f[i] - (neg_f[i] / sum_Q);
         if (measure_accuracy) {
             if (i < N) {
-                fprintf(fp, "%d, %.12e, %.12e, %.12e,%.12e,%.12e  %.12e\n", i, dC[i * 2], dC[i * 2 + 1], pos_f[i * 2],
-                        pos_f[i * 2 + 1], neg_f[i * 2] / sum_Q, neg_f[i * 2 + 1] / sum_Q);
+                fprintf(fp, "%d,%.12e, %.12e\n", i, neg_f[i * 2] / sum_Q, neg_f[i * 2 + 1] / sum_Q);
             }
         }
     }
@@ -824,6 +825,7 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
 
 
 
+    // Compute final t-SNE gradient
 
 
 
@@ -835,6 +837,16 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
 
         dC[i * 2 + 0] = pos_f[i * 2] - neg_f[i * 2];
         dC[i * 2 + 1] = pos_f[i * 2 + 1] - neg_f[i * 2 + 1];
+    }
+    if (measure_accuracy) {
+    FILE *fp = nullptr;
+        char buffer[500];
+        sprintf(buffer, "temp/fft_gradient%d.txt", itTest);
+        fp = fopen(buffer, "w"); // Open file for writing
+        for (int i = 0; i < N; i++) {
+                fprintf(fp, "%d,%.12e,%.12e\n", i, neg_f[i * 2] , neg_f[i * 2 + 1]);
+        }
+        fclose(fp);
     }
 
     delete[] pos_f;
@@ -888,16 +900,18 @@ void TSNE::computeExactGradientTest(double *Y, int N, int D) {
     for (int n = 0; n < N; n++) {
         double testQij = 0;
         double testPos = 0;
-        double testNeg = 0;
+        double testNeg1 = 0;
+        double testNeg2 = 0;
         double testdC = 0;
         int mD = 0;
         for (int m = 0; m < N; m++) {
             if (n != m) {
-                testNeg += Q[nN + m] * Q[nN + m] * (Y[nD + 0] - Y[mD + 0]) / sum_Q;
+                testNeg1 += Q[nN + m] * Q[nN + m] * (Y[nD + 0] - Y[mD + 0]) / sum_Q;
+                testNeg2 += Q[nN + m] * Q[nN + m] * (Y[nD + 1] - Y[mD + 1]) / sum_Q;
             }
             mD += D;
         }
-        fprintf(fp, "%d, %.12e\n", n, testNeg);
+        fprintf(fp, "%d, %.12e, %.12e\n", n, testNeg1,testNeg2);
         nN += N;
         nD += D;
     }
