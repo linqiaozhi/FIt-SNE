@@ -13,14 +13,12 @@ using namespace std;
 typedef double (*kernel_type)(double, double);
 
 typedef double (*kernel_type_2d)(double, double, double, double);
+	typedef double (*kerneltype)(double, double, double, double);
+	typedef double (*kerneltype2d)(double, double,double,double, double, double);
 
-void precompute_2d(double x_max, double x_min, double y_max, double y_min, int n_boxes, int n_interpolation_points,
-                   kernel_type_2d kernel, double *box_lower_bounds, double *box_upper_bounds, double *y_tilde_spacings,
-                   double *y_tilde, double *x_tilde, complex<double> *fft_kernel_tilde);
-
-void n_body_fft_2d(int N, int n_terms, double *xs, double *ys, double *chargesQij, int n_boxes,
-                   int n_interpolation_points, double *box_lower_bounds, double *box_upper_bounds,
-                   double *y_tilde_spacings, complex<double> *fft_kernel_tilde, double *potentialQij);
+    long int diff(timespec start, timespec end);
+	int precompute2(double xmax, double xmin, double ymax, double ymin, int nlat, int nterms, kerneltype2d ker,double * band,double *boxl, double *boxr,  double * prods, double * xpts, double * xptsall,double *yptsall,int *irearr, fftw_complex * zkvalf );
+	int nbodyfft2(int n, int ndim, double* xs, double * ys, double * charges, int nlat, int nterms,double *boxl, double *boxr,  double * prods, double * xpts, double * xptsall, double *yptsall,int* irearr, fftw_complex * zkvalf, double * pot, unsigned int nthreads);
 
 void precompute(double y_min, double y_max, int n_boxes, int n_interpolation_points, kernel_type kernel,
                 double *box_lower_bounds, double *box_upper_bounds, double *y_tilde_spacing, double *y_tilde,

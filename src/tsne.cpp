@@ -30,10 +30,14 @@
  *
  */
 
+#include "parallel_for.h"
 #include <chrono>
 using namespace std::chrono;
 #include "winlibs/stdafx.h"
 
+#include<algorithm>
+#include <thread>
+#include <vector>
 #include <iostream>
 #include <fstream>
 #include "nbodyfft.h"
@@ -69,6 +73,15 @@ double squared_cauchy(double x, double y) {
 
 double squared_cauchy_2d(double x1, double x2, double y1, double y2) {
     return pow(1.0 + pow(x1 - y1, 2) + pow(x2 - y2, 2), -2);
+}
+
+double cauchy2d(double x1,double x2,  double y1,double y2, double bandx, double bandy ){
+	return pow(1.0/(double) (1.0+pow(x1-y1,2) + pow(x2-y2,2)),2);
+	//return 1.0/(double) (1.0+pow(x-y,2));
+}
+
+double cauchy(double x,double y, double bandx, double bandy ){
+	return 1.0/(double) (1.0+pow(x-y,2));
 }
 
 
@@ -700,155 +713,174 @@ void TSNE::computeFftGradientOneD(double *P, unsigned int *inp_row_P, unsigned i
 
 
 // Compute the gradient of the t-SNE cost function using the FFT interpolation based approximation
-void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *inp_col_P, double *inp_val_P, double *Y,
-                              int N, int D, double *dC, int n_interpolation_points, double intervals_per_integer,
-                              int min_num_intervals, unsigned int nthreads) {
+void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int
+        *inp_col_P, double *inp_val_P, double *Y, int N, int D, double *dC, int
+        nterms, double intervals_per_integer, int
+        min_num_intervals, unsigned int nthreads) {
 
 
     if (nthreads == 0) {
         nthreads = std::thread::hardware_concurrency();
     }
+    //clock_t startTime;
+	//Zero out the gradient
+	for(int i = 0; i < N * D; i++){
+		dC[i] = 0.0;
+	}
 
-    // Zero out the gradient
-    for (int i = 0; i < N * D; i++) dC[i] = 0.0;
 
-    // For convenience, split the x and y coordinate values
-    auto *xs = new double[N];
-    auto *ys = new double[N];
+	double * xs =(double*) malloc(N* sizeof(double));
+	double * ys =(double*) malloc(N* sizeof(double));
+	double minloc = 1E5;
+	double maxloc = -1E5;
+	//Find the min of the locs
+	for (unsigned long i = 0; i < N; i++) {
+		xs[i] = Y[i*2+0];
+		ys[i] = Y[i*2+1];
+		if ( xs[i] > maxloc) maxloc = xs[i];
+		if ( xs[i] < minloc) minloc = xs[i];
+		if ( ys[i] > maxloc) maxloc = ys[i];
+		if ( ys[i] < minloc) minloc = ys[i];
+	}
+	minloc = floor(minloc);
+	maxloc = ceil(maxloc);
 
-    double min_coord = INFINITY;
-    double max_coord = -INFINITY;
-    // Find the min/max values of the x and y coordinates
-    for (unsigned long i = 0; i < N; i++) {
-        xs[i] = Y[i * 2 + 0];
-        ys[i] = Y[i * 2 + 1];
-        if (xs[i] > max_coord) max_coord = xs[i];
-        else if (xs[i] < min_coord) min_coord = xs[i];
-        if (ys[i] > max_coord) max_coord = ys[i];
-        else if (ys[i] < min_coord) min_coord = ys[i];
-    }
+	int ndim =4; //number of charges
+	double * chargesQij =(double*) malloc(ndim*N* sizeof(double));
+	double * potentialQij =(double*) malloc(ndim*N* sizeof(double));
 
-    // The number of "charges" or s+2 sums i.e. number of kernel sums
-    int n_terms = 4;
-    auto *chargesQij = new double[N * n_terms];
-    auto *potentialsQij = new double[N * n_terms]();
+	for (unsigned long j = 0; j < N; j++) {
+		chargesQij[j] = 1;
+		chargesQij[1*N+j] = Y[j*2];
+		chargesQij[2*N+j] = Y[j*2 +1 ];
+		chargesQij[3*N+j] = Y[j*2]*Y[j*2] +  Y[j*2 +1 ]*Y[j*2+1];
+	}
 
-    // Prepare the terms that we'll use to compute the sum i.e. the repulsive forces
-    for (unsigned long j = 0; j < N; j++) {
-        chargesQij[j * n_terms + 0] = 1;
-        chargesQij[j * n_terms + 1] = xs[j];
-        chargesQij[j * n_terms + 2] = ys[j];
-        chargesQij[j * n_terms + 3] = xs[j] * xs[j] + ys[j] * ys[j];
-    }
+	int nlat =fmax(min_num_intervals, (maxloc-minloc)/(double) intervals_per_integer);
+//	printf("%d nodes, from %lf to %lf, so using nlat=%d\n",nterms, minloc, maxloc, nlat);
+	int nboxes = nlat*nlat;
 
-    // Compute the number of boxes in a single dimension and the total number of boxes in 2d
-    auto n_boxes_per_dim = static_cast<int>(fmax(min_num_intervals, (max_coord - min_coord) / intervals_per_integer));
-    int n_boxes = n_boxes_per_dim * n_boxes_per_dim;
+	double * band = (double *) calloc(N,sizeof(double));
+	double * boxl =(double*) malloc(2*nboxes* sizeof(double));
+	double * boxr =(double*) malloc(2*nboxes* sizeof(double));
+	double *prods =(double*) malloc(nterms* sizeof(double));
+	double *xpts =(double*) malloc(nterms* sizeof(double));
+	int nfourh = nterms*nlat;
+	double *xptsall =(double*) calloc(nfourh*nfourh, sizeof(double));
+	double *yptsall =(double*) calloc(nfourh*nfourh, sizeof(double));
+	int *irearr =(int*) calloc(nfourh*nfourh, sizeof(int));
 
-    auto *box_lower_bounds = new double[2 * n_boxes];
-    auto *box_upper_bounds = new double[2 * n_boxes];
-    auto *y_tilde_spacings = new double[n_interpolation_points];
-    int n_interpolation_points_1d = n_interpolation_points * n_boxes_per_dim;
-    auto *x_tilde = new double[n_interpolation_points_1d]();
-    auto *y_tilde = new double[n_interpolation_points_1d]();
-    auto *fft_kernel_tilde = new complex<double>[2 * n_interpolation_points_1d * 2 * n_interpolation_points_1d];
+	clock_t startTime	=	clock();
+	fftw_complex * zkvalf = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * 2*nfourh*2*nfourh);
+	precompute2(maxloc, minloc, maxloc, minloc,nlat, nterms, &cauchy2d, band,boxl, boxr,  prods, xpts, xptsall,yptsall,irearr,zkvalf );
+	nbodyfft2(N,ndim,xs, ys,chargesQij, nlat, nterms,boxl, boxr,  prods, xpts, xptsall,yptsall, irearr, zkvalf,potentialQij,nthreads);
 
-    precompute_2d(max_coord, min_coord, max_coord, min_coord, n_boxes_per_dim, n_interpolation_points,
-                  &squared_cauchy_2d,
-                  box_lower_bounds, box_upper_bounds, y_tilde_spacings, x_tilde, y_tilde, fft_kernel_tilde);
-    n_body_fft_2d(N, n_terms, xs, ys, chargesQij, n_boxes_per_dim, n_interpolation_points, box_lower_bounds,
-                  box_upper_bounds, y_tilde_spacings, fft_kernel_tilde, potentialsQij);
+	double zSum = 0;
+	for (unsigned long i = 0; i < N; i++) {
+		double phi1 =  potentialQij[i*ndim +0];
+		double phi2 =  potentialQij[i*ndim+1];
+		double phi3 =  potentialQij[i*ndim+2];
+		double phi4 =  potentialQij[i*ndim+3];
+		double Y_i_1 = Y[i*2];
+		double Y_i_2 = Y[i*2 +1 ];
 
-    // Compute the normalization constant Z or sum of q_{ij}. This expression is different from the one in the original
-    // paper, but equivalent. This is done so we need only use a single kernel (K_2 in the paper) instead of two
-    // different ones. We subtract N at the end because the following sums over all i, j, whereas Z contains i \neq j
-    double sum_Q = 0;
-    for (unsigned long i = 0; i < N; i++) {
-        double phi1 = potentialsQij[i * n_terms + 0];
-        double phi2 = potentialsQij[i * n_terms + 1];
-        double phi3 = potentialsQij[i * n_terms + 2];
-        double phi4 = potentialsQij[i * n_terms + 3];
+		zSum += (1 + Y_i_1*Y_i_1 + Y_i_2*Y_i_2)*phi1 - 2*(Y_i_1*phi2 + Y_i_2*phi3) + phi4;
+	}
+	zSum -= N;
+	//printf("zSum from the new calc is %le\n\n", zSum2);
+	clock_t end2 = clock();
+	double time_spent2 = (double)(end2 - startTime) / CLOCKS_PER_SEC;
+	//printf("%d points in 2D with %d charges from %f to %f. nlat: %d, nterms: %d, so (nlat*nlat*nterms)^2 = %d point FFT. \nFast: %.2e seconds, %.2e per second\n",
+	//N, ndim, minloc, maxloc,nlat,nterms,nlat*nterms*2*nlat*nterms*2,  time_spent2, N/time_spent2);
 
-        sum_Q += (1 + xs[i] * xs[i] + ys[i] * ys[i]) * phi1 - 2 * (xs[i] * phi2 + ys[i] * phi3) + phi4;
-    }
-    sum_Q -= N;
-
-    this->current_sum_Q = sum_Q;
-
-    double *pos_f = new double[N * 2];
+	//Now, figure out the Gaussian component of the gradient.  This
+	//coresponds to the "attraction" term of the gradient.  It was
+	//calculated using a fast KNN approach, so here we just use the results
+	//that were passed to this function
+	unsigned int ind2 =0;
+	double * pos_f;
+	pos_f = new double[N*2];
+	// Loop over all edges in the graph
 
     // Now, figure out the Gaussian component of the gradient. This corresponds to the "attraction" term of the
     // gradient. It was calculated using a fast KNN approach, so here we just use the results that were passed to this
     // function
-    unsigned int ind2 = 0;
-    {
-        // Pre loop
-        std::vector<std::thread> threads(nthreads);
-        for (int t = 0; t < nthreads; t++) {
-            threads[t] = std::thread(std::bind(
-                    [&](const int bi, const int ei, const int t)
-                    {
-                        // loop over all items
-                        for(int n = bi;n<ei;n++)
-                        {
-                            // inner loop
-                            {
-
+                    PARALLEL_FOR(nthreads, N, {
                                 double dim1 = 0;
                                 double dim2 = 0;
 
-                                for (unsigned int i = inp_row_P[n]; i < inp_row_P[n + 1]; i++) {
+                                for (unsigned int i = inp_row_P[loop_i]; i < inp_row_P[loop_i + 1]; i++) {
                                 // Compute pairwise distance and Q-value
                                     unsigned int ind3 = inp_col_P[i];
-                                    double d_ij = (xs[n] - xs[ind3]) * (xs[n] - xs[ind3]) + (ys[n] - ys[ind3]) * (ys[n] - ys[ind3]);
+                                    double d_ij = (xs[loop_i] - xs[ind3]) * (xs[loop_i] - xs[ind3]) + (ys[loop_i] - ys[ind3]) * (ys[loop_i] - ys[ind3]);
                                     double q_ij = 1 / (1 + d_ij);
 
-                                    dim1 += inp_val_P[i] * q_ij * (xs[n] - xs[ind3]);
-                                    dim2 += inp_val_P[i] * q_ij * (ys[n] - ys[ind3]);
+                                    dim1 += inp_val_P[i] * q_ij * (xs[loop_i] - xs[ind3]);
+                                    dim2 += inp_val_P[i] * q_ij * (ys[loop_i] - ys[ind3]);
                                 }
-                                pos_f[n * 2 + 0] = dim1;
-                                pos_f[n * 2 + 1] = dim2;
+                                pos_f[loop_i * 2 + 0] = dim1;
+                                pos_f[loop_i * 2 + 1] = dim2;
 
-                            }
-                        }
-
-                    },t*N/nthreads,(t+1)==nthreads?N:(t+1)*N/nthreads,t));
-        }
-        std::for_each(threads.begin(),threads.end(),[](std::thread& x){x.join();});
-        // Post loop
-  }
-
-//clock_gettime(CLOCK_MONOTONIC, &finish2);
-//elapsed2 = (finish2.tv_nsec - start2.tv_nsec)/1E6;
-//cout << "MT" << elapsed2 <<endl;
+                            });
 
 
+	FILE* fp = nullptr;
+	if (measure_accuracy){
+		char buffer[500];
+		sprintf(buffer,"temp/fft_gradient%d.txt", itTest);
+		fp = fopen( buffer, "w" ); // Open file for writing
+	}
 
+	//Make the negative term, or F_rep in the equation 3 of the paper
+	double * neg_f;
+	neg_f = new double[N*2];
+	for(unsigned int n = 0; n < N; n++) {
 
+		double Qij_y_i_0,Qij_y_i_1,Qij_y_j_0,Qij_y_j_1,Qij_y_0,Qij_y_1;
 
+		Qij_y_i_0 = Y[2*n] *potentialQij[n*ndim ];
+		Qij_y_i_1 = Y[2*n+1]*potentialQij[n*ndim ];
+		Qij_y_j_0 = potentialQij[n*ndim +1 ];
+		Qij_y_j_1 = potentialQij[n*ndim +2 ];
 
-    // Make the negative term, or F_rep in the equation 3 of the paper
-    double *neg_f = new double[N * 2];
-    for (unsigned int i = 0; i < N; i++) {
-        neg_f[i * 2 + 0] = (xs[i] * potentialsQij[i * n_terms] - potentialsQij[i * n_terms + 1]) / sum_Q;
-        neg_f[i * 2 + 1] = (ys[i] * potentialsQij[i * n_terms] - potentialsQij[i * n_terms + 2]) / sum_Q;
+		Qij_y_0 = Qij_y_i_0 - Qij_y_j_0;
+		Qij_y_1 = Qij_y_i_1 - Qij_y_j_1;
 
-        dC[i * 2 + 0] = pos_f[i * 2] - neg_f[i * 2];
-        dC[i * 2 + 1] = pos_f[i * 2 + 1] - neg_f[i * 2 + 1];
-    }
+		//Note that we only use the Z normalization term in the F_rep,
+		//because it cancels in the F_attr.  Also, note that we divide
+		//it, because the denominator of q_ij^2  is Z^2, so it cancels
+		//out the Z in the numerater for Equation 3
+		neg_f [n*2] = Qij_y_0/zSum;
+		neg_f [n*2+1] = Qij_y_1/zSum;
 
-    delete[] pos_f;
-    delete[] neg_f;
-    delete[] potentialsQij;
-    delete[] chargesQij;
-    delete[] xs;
-    delete[] ys;
-    delete[] box_lower_bounds;
-    delete[] box_upper_bounds;
-    delete[] y_tilde_spacings;
-    delete[] y_tilde;
-    delete[] x_tilde;
-    delete[] fft_kernel_tilde;
+		dC[n*2+0] = pos_f[n*2] - neg_f[n*2];
+		dC[n*2+1] = pos_f[n*2+1] - neg_f[n*2+1];
+		//fprintf(fp, "%d, %e, %e, %e\n",n, dC[n*2+0], pos_f[n*2], neg_f[n*2]);
+		if (measure_accuracy){
+			fprintf(fp,"%d, %.12e, %.12e, %.12e, %.12e, %.12e  %.12e\n",n, dC[n*2+0], dC[n*2+1], pos_f[n*2],pos_f[n*2+1], neg_f[n*2], neg_f[n*2+1]);
+		}
+		if (n<10){
+			//printf("fft: %d, %e, %e, %e\n",n, dC[n*2+0], pos_f[n*2], neg_f[n*2]);
+		}
+
+	}
+	if (measure_accuracy){
+		fclose(fp);
+	}
+	clock_t end3 = clock();
+	double time_spent3 = (double)(end3 - end2) / CLOCKS_PER_SEC;
+	//printf("Rest of it took %lf\n", time_spent3);
+
+	delete[] pos_f;
+	delete[] neg_f;
+	free(potentialQij);
+	free(chargesQij);
+
+	free(xs); free(ys);free(band);
+	free(boxl); free (boxr); free(prods); free(xpts); free(xptsall);
+	free(yptsall); free(irearr);
+	fftw_free(zkvalf);
+	chargesQij = NULL;
 }
 
 
