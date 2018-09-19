@@ -770,7 +770,8 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int
 	double *yptsall =(double*) calloc(nfourh*nfourh, sizeof(double));
 	int *irearr =(int*) calloc(nfourh*nfourh, sizeof(int));
 
-	clock_t startTime	=	clock();
+        struct timespec start10, end10, start20, end20,start30, end30;
+        clock_gettime(CLOCK_MONOTONIC, &start10);
 	fftw_complex * zkvalf = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * 2*nfourh*2*nfourh);
 	precompute2(maxloc, minloc, maxloc, minloc,nlat, nterms, &cauchy2d, band,boxl, boxr,  prods, xpts, xptsall,yptsall,irearr,zkvalf );
 	nbodyfft2(N,ndim,xs, ys,chargesQij, nlat, nterms,boxl, boxr,  prods, xpts, xptsall,yptsall, irearr, zkvalf,potentialQij,nthreads);
@@ -788,11 +789,12 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int
 	}
 	zSum -= N;
 	//printf("zSum from the new calc is %le\n\n", zSum2);
-	clock_t end2 = clock();
-	double time_spent2 = (double)(end2 - startTime) / CLOCKS_PER_SEC;
-	//printf("%d points in 2D with %d charges from %f to %f. nlat: %d, nterms: %d, so (nlat*nlat*nterms)^2 = %d point FFT. \nFast: %.2e seconds, %.2e per second\n",
-	//N, ndim, minloc, maxloc,nlat,nterms,nlat*nterms*2*nlat*nterms*2,  time_spent2, N/time_spent2);
 
+        clock_gettime(CLOCK_MONOTONIC, &end10);
+	printf("%d points in 2D with %d charges from %f to %f. nlat: %d, nterms: %d, so (nlat*nlat*nterms)^2 = %d point FFT. \nFast: %.2e seconds\n",
+	N, ndim, minloc, maxloc,nlat,nterms,nlat*nterms*2*nlat*nterms*2,  (diff(start10,end10))/(double)1E6);
+
+        clock_gettime(CLOCK_MONOTONIC, &start20);
 	//Now, figure out the Gaussian component of the gradient.  This
 	//coresponds to the "attraction" term of the gradient.  It was
 	//calculated using a fast KNN approach, so here we just use the results
@@ -823,6 +825,8 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int
 
                             });
 
+        clock_gettime(CLOCK_MONOTONIC, &end20);
+	printf("Attractive forces took %lf\n", (diff(start20,end20))/(double)1E6);
 
 	FILE* fp = nullptr;
 	if (measure_accuracy){
@@ -867,9 +871,6 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int
 	if (measure_accuracy){
 		fclose(fp);
 	}
-	clock_t end3 = clock();
-	double time_spent3 = (double)(end3 - end2) / CLOCKS_PER_SEC;
-	//printf("Rest of it took %lf\n", time_spent3);
 
 	delete[] pos_f;
 	delete[] neg_f;
