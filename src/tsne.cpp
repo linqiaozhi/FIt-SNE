@@ -47,7 +47,7 @@ using namespace std::chrono;
 #include "sptree.h"
 #include "tsne.h"
 #include "progress_bar/ProgressBar.hpp"
-
+#include "time_code.h"
 #ifdef _WIN32
 #include "winlibs/unistd.h"
 #else
@@ -100,6 +100,7 @@ int TSNE::run(double *X, int N, int D, double *Y, int no_dims, double perplexity
               int nterms, double intervals_per_integer, int min_num_intervals, unsigned int nthreads, 
               int load_affinities, int perplexity_list_length, double *perplexity_list) {
 
+    printf("WARNING: Using legacy t-SNE: 61e4a2\n");
     // Set random seed
     if (skip_random_init != true) {
         if (rand_seed >= 0) {
@@ -495,6 +496,8 @@ int TSNE::run(double *X, int N, int D, double *Y, int no_dims, double perplexity
 
         // Print out progress
         if ((iter % 50 == 0 || iter == max_iter - 1)) {
+		INITIALIZE_TIME;
+		START_TIME;
             clock_gettime(CLOCK_MONOTONIC, &end);
             double C = .0;
             if (exact) {
@@ -511,6 +514,7 @@ int TSNE::run(double *X, int N, int D, double *Y, int no_dims, double perplexity
                 total_time += (float) (end.tv_sec - start.tv_sec) / CLOCKS_PER_SEC;
                 printf("Iteration %d (50 iterations in %ld seconds), cost %f\n", iter, (end.tv_sec - start.tv_sec), C);
             }
+	    END_TIME("Computing Error");
             clock_gettime(CLOCK_MONOTONIC, &start);
         }
     }
@@ -753,6 +757,8 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
     auto *y_tilde = new double[n_interpolation_points_1d]();
     auto *fft_kernel_tilde = new complex<double>[2 * n_interpolation_points_1d * 2 * n_interpolation_points_1d];
 
+    INITIALIZE_TIME;
+    START_TIME;
     precompute_2d(max_coord, min_coord, max_coord, min_coord, n_boxes_per_dim, n_interpolation_points,
                   &squared_cauchy_2d,
                   box_lower_bounds, box_upper_bounds, y_tilde_spacings, x_tilde, y_tilde, fft_kernel_tilde);
@@ -776,7 +782,8 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
     this->current_sum_Q = sum_Q;
 
     double *pos_f = new double[N * 2];
-
+    END_TIME("Total Interpolation");
+    START_TIME;
     // Now, figure out the Gaussian component of the gradient. This corresponds to the "attraction" term of the
     // gradient. It was calculated using a fast KNN approach, so here we just use the results that were passed to this
     // function
@@ -818,6 +825,7 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
         // Post loop
   }
 
+    END_TIME("Attractive Forces");
 //clock_gettime(CLOCK_MONOTONIC, &finish2);
 //elapsed2 = (finish2.tv_nsec - start2.tv_nsec)/1E6;
 //cout << "MT" << elapsed2 <<endl;
