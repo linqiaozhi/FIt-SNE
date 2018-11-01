@@ -92,13 +92,13 @@ double squared_cauchy(double x, double y) {
 //}
 
 double cauchy_2d(double x1, double x2, double y1, double y2) {
-    double df = 1.0;
+    double df = 0.5;
     return pow(1.0 + ((x1 - y1)*(x1-y1) + (x2 - y2)*(x2-y2))/df, -(df+1.0)/(double)2.0);
 }
 
 double squared_cauchy_2d(double x1, double x2, double y1, double y2) {
-    double df = 1.0;
-    return pow(1.0 + ((x1 - y1)*(x1-y1) + (x2 - y2)*(x2-y2))/df, -(df+1.0));
+    double df = 0.5;
+    return pow(1.0 + ((x1 - y1)*(x1-y1) + (x2 - y2)*(x2-y2))/df, -(df+3.0)/(double)2.0);
 }
 
 
@@ -1024,6 +1024,7 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
     double *pos_f = new double[N * 2];
     END_TIME("Total Interpolation");
         START_TIME;
+    double df = 0.5;
     // Loop over all edges in the graph
     for (unsigned int n = 0; n < N; n++) {
         pos_f[n * 2 + 0] = 0;
@@ -1035,7 +1036,8 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
             //double d_ij = (xs[n] - xs[ind2]) * (xs[n] - xs[ind2]) + (ys[n] - ys[ind2]) * (ys[n] - ys[ind2]);
             //double d_ij = cauchy_2d(xs[n] , ys[n],xs[ind2], ys[ind2]);
             //double q_ij = 1 / (1 + d_ij);
-            double q_ij = cauchy_2d(xs[n] , ys[n],xs[ind2], ys[ind2]);
+            //double q_ij = cauchy_2d(xs[n] , ys[n],xs[ind2], ys[ind2]);
+            double q_ij = pow(1.0 + ((xs[n] - xs[ind2])*(xs[n] - xs[ind2]) + (ys[n] - ys[ind2])*(ys[n] - ys[ind2]))/df,-1.0);
 
             pos_f[n * 2 + 0] += inp_val_P[i] * q_ij * (xs[n] - xs[ind2]);
             pos_f[n * 2 + 1] += inp_val_P[i] * q_ij * (ys[n] - ys[ind2]);
