@@ -83,7 +83,7 @@ def fast_tsne(X, theta=.5, perplexity=30, map_dims=2, max_iter=1000,
                 f.write(initialization.tobytes()) 
                
     # run t-sne
-    subprocess.call(os.getcwd()+'/fast_tsne')
+    subprocess.call(os.path.dirname(os.path.realpath(__file__)) + '/bin/fast_tsne')
             
     # read data file
     with open(os.getcwd()+'/temp/result.dat', 'rb') as f:
