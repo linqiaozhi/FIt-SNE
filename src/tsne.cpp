@@ -55,6 +55,8 @@
 
 #define _CRT_SECURE_NO_WARNINGS
 
+#define DF 1.0
+
 
 int itTest = 0;
 bool measure_accuracy = false;
@@ -92,12 +94,12 @@ double squared_cauchy(double x, double y) {
 //}
 
 double cauchy_2d(double x1, double x2, double y1, double y2) {
-    double df = 0.5;
+    double df = DF;
     return pow(1.0 + ((x1 - y1)*(x1-y1) + (x2 - y2)*(x2-y2))/df, -(df+1.0)/(double)2.0);
 }
 
 double squared_cauchy_2d(double x1, double x2, double y1, double y2) {
-    double df = 0.5;
+    double df = DF;
     return pow(1.0 + ((x1 - y1)*(x1-y1) + (x2 - y2)*(x2-y2))/df, -(df+3.0)/(double)2.0);
 }
 
@@ -1024,7 +1026,7 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
     double *pos_f = new double[N * 2];
     END_TIME("Total Interpolation");
         START_TIME;
-    double df = 0.5;
+    double df = DF;
     // Loop over all edges in the graph
     for (unsigned int n = 0; n < N; n++) {
         pos_f[n * 2 + 0] = 0;
