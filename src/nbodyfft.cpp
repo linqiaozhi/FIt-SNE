@@ -1,5 +1,6 @@
 #include "winlibs/stdafx.h"
 
+#include "time_code.h"
 #include "nbodyfft.h"
 
 
@@ -112,6 +113,8 @@ void n_body_fft_2d(int N, int n_terms, double *xs, double *ys, double *chargesQi
         x_in_box[i] = (xs[i] - x_min) / box_width;
         y_in_box[i] = (ys[i] - y_min) / box_width;
     }
+    INITIALIZE_TIME
+    START_TIME
 
     /*
      * Step 1: Interpolate kernel using Lagrange polynomials and compute the w coefficients
@@ -143,6 +146,8 @@ void n_body_fft_2d(int N, int n_terms, double *xs, double *ys, double *chargesQi
         }
     }
 
+        END_TIME("Step 1");
+        START_TIME;
     /*
      * Step 2: Compute the values v_{m, n} at the equispaced nodes, multiply the kernel matrix with the coefficients w
      */
@@ -210,6 +215,8 @@ void n_body_fft_2d(int N, int n_terms, double *xs, double *ys, double *chargesQi
     delete[] fft_output;
     delete[] mpol_sort;
 
+    END_TIME("FFT");
+    START_TIME
     /*
      * Step 3: Compute the potentials \tilde{\phi}
      */
@@ -231,6 +238,7 @@ void n_body_fft_2d(int N, int n_terms, double *xs, double *ys, double *chargesQi
             }
         }
     }
+    END_TIME("Step 3");
     delete[] point_box_idx;
     delete[] x_interpolated_values;
     delete[] y_interpolated_values;

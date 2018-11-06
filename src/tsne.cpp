@@ -45,6 +45,7 @@
 #include "sptree.h"
 #include "tsne.h"
 
+#include "time_code.h"
 #ifdef _WIN32
 #include "winlibs/unistd.h"
 #else
@@ -81,14 +82,25 @@ double squared_cauchy(double x, double y) {
 
 
 
+//double cauchy_2d(double x1, double x2, double y1, double y2) {
+//    return pow(1.0 + 2*((x1 - y1)*(x1-y1) + (x2 - y2)*(x2-y2)), -0.75);
+//}
+//
+//double squared_cauchy_2d(double x1, double x2, double y1, double y2) {
+//    //return pow(1.0 + pow(x1 - y1, 2) + pow(x2 - y2, 2), -2);
+//    return pow(1.0 + 2*((x1 - y1)*(x1-y1) + (x2 - y2)*(x2-y2)), -1.5);
+//}
+
 double cauchy_2d(double x1, double x2, double y1, double y2) {
-    return pow(1.0 + 2*((x1 - y1)*(x1-y1) + (x2 - y2)*(x2-y2)), -3/4);
+    double df = 0.5;
+    return pow(1.0 + ((x1 - y1)*(x1-y1) + (x2 - y2)*(x2-y2))/df, -(df+1.0)/(double)2.0);
 }
 
 double squared_cauchy_2d(double x1, double x2, double y1, double y2) {
-    //return pow(1.0 + pow(x1 - y1, 2) + pow(x2 - y2, 2), -2);
-    return pow(1.0 + 2*((x1 - y1)*(x1-y1) + (x2 - y2)*(x2-y2)), -6/4);
+    double df = 0.5;
+    return pow(1.0 + ((x1 - y1)*(x1-y1) + (x2 - y2)*(x2-y2))/df, -(df+3.0)/(double)2.0);
 }
+
 
 
 
@@ -521,6 +533,8 @@ int TSNE::run(double *X, int N, int D, double *Y, int no_dims, double perplexity
 
         // Print out progress
         if ((iter % 50 == 0 || iter == max_iter - 1)) {
+            INITIALIZE_TIME;
+            START_TIME;
             clock_t end = clock();
             double C = .0;
             if (exact) C = evaluateError(P, Y, N, no_dims);
@@ -530,6 +544,7 @@ int TSNE::run(double *X, int N, int D, double *Y, int no_dims, double perplexity
                 printf("Iteration %d (50 iterations in %f seconds)\n", iter, (float) (end - start) / CLOCKS_PER_SEC);
             }
             start = clock();
+            END_TIME("Computing Error");
         }
     }
 
@@ -941,6 +956,9 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
         if (ys[i] > max_coord) max_coord = ys[i];
         else if (ys[i] < min_coord) min_coord = ys[i];
     }
+#if defined(TIME_CODE)
+    printf("Min: %lf Max:  %lf\n", min_coord, max_coord);
+#endif
 
     // The number of "charges" or s+2 sums i.e. number of kernel sums
     int squared_n_terms = 3;
@@ -966,6 +984,8 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
     auto *y_tilde = new double[n_interpolation_points_1d]();
     auto *fft_kernel_tilde = new complex<double>[2 * n_interpolation_points_1d * 2 * n_interpolation_points_1d];
 
+    INITIALIZE_TIME;
+    START_TIME;
     precompute_2d(max_coord, min_coord, max_coord, min_coord, n_boxes_per_dim, n_interpolation_points,
                   &squared_cauchy_2d,
                   box_lower_bounds, box_upper_bounds, y_tilde_spacings, x_tilde, y_tilde, fft_kernel_tilde);
@@ -1002,6 +1022,9 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
     // function
     unsigned int ind2 = 0;
     double *pos_f = new double[N * 2];
+    END_TIME("Total Interpolation");
+        START_TIME;
+    double df = 0.5;
     // Loop over all edges in the graph
     for (unsigned int n = 0; n < N; n++) {
         pos_f[n * 2 + 0] = 0;
@@ -1013,7 +1036,8 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
             //double d_ij = (xs[n] - xs[ind2]) * (xs[n] - xs[ind2]) + (ys[n] - ys[ind2]) * (ys[n] - ys[ind2]);
             //double d_ij = cauchy_2d(xs[n] , ys[n],xs[ind2], ys[ind2]);
             //double q_ij = 1 / (1 + d_ij);
-            double q_ij = cauchy_2d(xs[n] , ys[n],xs[ind2], ys[ind2]);
+            //double q_ij = cauchy_2d(xs[n] , ys[n],xs[ind2], ys[ind2]);
+            double q_ij = pow(1.0 + ((xs[n] - xs[ind2])*(xs[n] - xs[ind2]) + (ys[n] - ys[ind2])*(ys[n] - ys[ind2]))/df,-1.0);
 
             pos_f[n * 2 + 0] += inp_val_P[i] * q_ij * (xs[n] - xs[ind2]);
             pos_f[n * 2 + 1] += inp_val_P[i] * q_ij * (ys[n] - ys[ind2]);
@@ -1027,6 +1051,7 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
         fp = fopen(buffer, "w"); // open file for writing
     }
     // Make the negative term, or F_rep in the equation 3 of the paper
+    END_TIME("Attractive Forces");
     double *neg_f = new double[N * 2];
     for (unsigned int i = 0; i < N; i++) {
         double h2 = SquaredPotentialsQij[i * squared_n_terms];
@@ -1872,6 +1897,22 @@ void TSNE::save_data(const char *result_path, double* data, int* landmarks, doub
 
 
 int main(int argc, char *argv[]) {
+    //Uncomment these lines to check that cauchy_2d() takes longer with df !=1.0
+    //Note that you can't just give cauchy_2d the same number because compilers
+    //are too smart. That's why I have the arguments that change at each
+    //iteration, and you have to print it.
+    //INITIALIZE_TIME;
+    //    START_TIME;
+    //    double fofo=0; 
+    //    for (int i=0; i< 10000; i++ ) {
+    //        for (int j=0; j< 1000; j++ ) {
+    //            fofo += cauchy_2d(i*1.2, i*1.4, j*3.22,(i+j)*1.001);
+    //        }
+    //    }
+    //    printf("Fofo: %lf", fofo);
+    //    END_TIME("Using cauchy_2d");
+    //    exit(1);
+
 	printf("=============== t-SNE ===============\n");
 
 	// Define some variables
