@@ -60,6 +60,7 @@ using namespace std::chrono;
 #include <functional>
 
 #define _CRT_SECURE_NO_WARNINGS
+#define DF 0.001
 
 
 int itTest = 0;
@@ -71,10 +72,19 @@ double squared_cauchy(double x, double y) {
 }
 
 
-double squared_cauchy_2d(double x1, double x2, double y1, double y2) {
-    return pow(1.0 + pow(x1 - y1, 2) + pow(x2 - y2, 2), -2);
+//double squared_cauchy_2d(double x1, double x2, double y1, double y2) {
+//    return pow(1.0 + pow(x1 - y1, 2) + pow(x2 - y2, 2), -2);
+//}
+
+double cauchy_2d(double x1, double x2, double y1, double y2) {
+    double df = DF;
+    return pow(1.0 + ((x1 - y1)*(x1-y1) + (x2 - y2)*(x2-y2))/df, -(df+1.0)/(double)2.0);
 }
 
+double squared_cauchy_2d(double x1, double x2, double y1, double y2) {
+    double df = DF;
+    return pow(1.0 + ((x1 - y1)*(x1-y1) + (x2 - y2)*(x2-y2))/df, -(df+3.0)/(double)2.0);
+}
 
 using namespace std;
 
@@ -681,39 +691,8 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
                               int N, int D, double *dC, int n_interpolation_points, double intervals_per_integer,
                               int min_num_intervals, unsigned int nthreads) {
 
-
-    // Zero out the gradient
-    for (int i = 0; i < N * D; i++) dC[i] = 0.0;
-
-    // For convenience, split the x and y coordinate values
-    auto *xs = new double[N];
-    auto *ys = new double[N];
-
     double min_coord = INFINITY;
     double max_coord = -INFINITY;
-    // Find the min/max values of the x and y coordinates
-    for (unsigned long i = 0; i < N; i++) {
-        xs[i] = Y[i * 2 + 0];
-        ys[i] = Y[i * 2 + 1];
-        if (xs[i] > max_coord) max_coord = xs[i];
-        else if (xs[i] < min_coord) min_coord = xs[i];
-        if (ys[i] > max_coord) max_coord = ys[i];
-        else if (ys[i] < min_coord) min_coord = ys[i];
-    }
-
-    // The number of "charges" or s+2 sums i.e. number of kernel sums
-    int n_terms = 4;
-    auto *chargesQij = new double[N * n_terms];
-    auto *potentialsQij = new double[N * n_terms]();
-
-    // Prepare the terms that we'll use to compute the sum i.e. the repulsive forces
-    for (unsigned long j = 0; j < N; j++) {
-        chargesQij[j * n_terms + 0] = 1;
-        chargesQij[j * n_terms + 1] = xs[j];
-        chargesQij[j * n_terms + 2] = ys[j];
-        chargesQij[j * n_terms + 3] = xs[j] * xs[j] + ys[j] * ys[j];
-    }
-
     // Compute the number of boxes in a single dimension and the total number of boxes in 2d
     auto n_boxes_per_dim = static_cast<int>(fmax(min_num_intervals, (max_coord - min_coord) / intervals_per_integer));
 
@@ -729,6 +708,36 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
         n_boxes_per_dim = allowed_n_boxes_per_dim[chosen_i];
     }
 
+    // Zero out the gradient
+    for (int i = 0; i < N * D; i++) dC[i] = 0.0;
+
+    // For convenience, split the x and y coordinate values
+    auto *xs = new double[N];
+    auto *ys = new double[N];
+
+    // Find the min/max values of the x and y coordinates
+    for (unsigned long i = 0; i < N; i++) {
+        xs[i] = Y[i * 2 + 0];
+        ys[i] = Y[i * 2 + 1];
+        if (xs[i] > max_coord) max_coord = xs[i];
+        else if (xs[i] < min_coord) min_coord = xs[i];
+        if (ys[i] > max_coord) max_coord = ys[i];
+        else if (ys[i] < min_coord) min_coord = ys[i];
+    }
+
+    // The number of "charges" or s+2 sums i.e. number of kernel sums
+    int squared_n_terms = 3;
+    auto *SquaredChargesQij = new double[N * squared_n_terms];
+    auto *SquaredPotentialsQij = new double[N * squared_n_terms]();
+
+    // Prepare the terms that we'll use to compute the sum i.e. the repulsive forces
+    for (unsigned long j = 0; j < N; j++) {
+        SquaredChargesQij[j * squared_n_terms + 0] = xs[j];
+        SquaredChargesQij[j * squared_n_terms + 1] = ys[j];
+        SquaredChargesQij[j * squared_n_terms + 2] = 1;
+    }
+
+    // Compute the number of boxes in a single dimension and the total number of boxes in 2d
     int n_boxes = n_boxes_per_dim * n_boxes_per_dim;
 
     auto *box_lower_bounds = new double[2 * n_boxes];
@@ -739,78 +748,116 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
     auto *y_tilde = new double[n_interpolation_points_1d]();
     auto *fft_kernel_tilde = new complex<double>[2 * n_interpolation_points_1d * 2 * n_interpolation_points_1d];
 
-
     INITIALIZE_TIME;
     START_TIME;
     precompute_2d(max_coord, min_coord, max_coord, min_coord, n_boxes_per_dim, n_interpolation_points,
                   &squared_cauchy_2d,
                   box_lower_bounds, box_upper_bounds, y_tilde_spacings, x_tilde, y_tilde, fft_kernel_tilde);
-    n_body_fft_2d(N, n_terms, xs, ys, chargesQij, n_boxes_per_dim, n_interpolation_points, box_lower_bounds,
-                  box_upper_bounds, y_tilde_spacings, fft_kernel_tilde, potentialsQij,nthreads);
+    n_body_fft_2d(N, squared_n_terms, xs, ys, SquaredChargesQij, n_boxes_per_dim, n_interpolation_points, box_lower_bounds,
+                  box_upper_bounds, y_tilde_spacings, fft_kernel_tilde, SquaredPotentialsQij, nthreads);
 
-    // Compute the normalization constant Z or sum of q_{ij}. This expression is different from the one in the original
-    // paper, but equivalent. This is done so we need only use a single kernel (K_2 in the paper) instead of two
-    // different ones. We subtract N at the end because the following sums over all i, j, whereas Z contains i \neq j
+    int not_squared_n_terms = 1;
+    auto *NotSquaredChargesQij = new double[N * not_squared_n_terms];
+    auto *NotSquaredPotentialsQij = new double[N * not_squared_n_terms]();
+
+    // Prepare the terms that we'll use to compute the sum i.e. the repulsive forces
+    for (unsigned long j = 0; j < N; j++) {
+        NotSquaredChargesQij[j * not_squared_n_terms + 0] = 1;
+    }
+
+    precompute_2d(max_coord, min_coord, max_coord, min_coord, n_boxes_per_dim, n_interpolation_points,
+                  &cauchy_2d,
+                  box_lower_bounds, box_upper_bounds, y_tilde_spacings, x_tilde, y_tilde, fft_kernel_tilde);
+    n_body_fft_2d(N, not_squared_n_terms, xs, ys, NotSquaredChargesQij, n_boxes_per_dim, n_interpolation_points, box_lower_bounds,
+                  box_upper_bounds, y_tilde_spacings, fft_kernel_tilde, NotSquaredPotentialsQij, nthreads);
+
+
+
+
+    // Compute the normalization constant Z or sum of q_{ij}.
     double sum_Q = 0;
     for (unsigned long i = 0; i < N; i++) {
-        double phi1 = potentialsQij[i * n_terms + 0];
-        double phi2 = potentialsQij[i * n_terms + 1];
-        double phi3 = potentialsQij[i * n_terms + 2];
-        double phi4 = potentialsQij[i * n_terms + 3];
-
-        sum_Q += (1 + xs[i] * xs[i] + ys[i] * ys[i]) * phi1 - 2 * (xs[i] * phi2 + ys[i] * phi3) + phi4;
+        double h1 = NotSquaredPotentialsQij[i * not_squared_n_terms+ 0];
+        sum_Q += h1;
     }
-    sum_Q -= N;
 
-    this->current_sum_Q = sum_Q;
-
-    double *pos_f = new double[N * 2];
-
-    END_TIME("Total Interpolation");
-        START_TIME;
     // Now, figure out the Gaussian component of the gradient. This corresponds to the "attraction" term of the
     // gradient. It was calculated using a fast KNN approach, so here we just use the results that were passed to this
     // function
-                    PARALLEL_FOR(nthreads, N, {
-                                double dim1 = 0;
-                                double dim2 = 0;
+    unsigned int ind2 = 0;
+    double *pos_f = new double[N * 2];
+    END_TIME("Total Interpolation");
+        START_TIME;
+    double df = 1;
+    // Loop over all edges in the graph
+    for (unsigned int n = 0; n < N; n++) {
+        pos_f[n * 2 + 0] = 0;
+        pos_f[n * 2 + 1] = 0;
 
-                                for (unsigned int i = inp_row_P[loop_i]; i < inp_row_P[loop_i + 1]; i++) {
-                                // Compute pairwise distance and Q-value
-                                    unsigned int ind3 = inp_col_P[i];
-                                    double d_ij = (xs[loop_i] - xs[ind3]) * (xs[loop_i] - xs[ind3]) + (ys[loop_i] - ys[ind3]) * (ys[loop_i] - ys[ind3]);
-                                    double q_ij = 1 / (1 + d_ij);
+        for (unsigned int i = inp_row_P[n]; i < inp_row_P[n + 1]; i++) {
+            // Compute pairwise distance and Q-value
+            ind2 = inp_col_P[i];
+            //double d_ij = (xs[n] - xs[ind2]) * (xs[n] - xs[ind2]) + (ys[n] - ys[ind2]) * (ys[n] - ys[ind2]);
+            //double d_ij = cauchy_2d(xs[n] , ys[n],xs[ind2], ys[ind2]);
+            //double q_ij = 1 / (1 + d_ij);
+            //double q_ij = cauchy_2d(xs[n] , ys[n],xs[ind2], ys[ind2]);
+            double q_ij = pow(1.0 + ((xs[n] - xs[ind2])*(xs[n] - xs[ind2]) + (ys[n] - ys[ind2])*(ys[n] - ys[ind2]))/df,-1.0);
 
-                                    dim1 += inp_val_P[i] * q_ij * (xs[loop_i] - xs[ind3]);
-                                    dim2 += inp_val_P[i] * q_ij * (ys[loop_i] - ys[ind3]);
-                                }
-                                pos_f[loop_i * 2 + 0] = dim1;
-                                pos_f[loop_i * 2 + 1] = dim2;
+            pos_f[n * 2 + 0] += inp_val_P[i] * q_ij * (xs[n] - xs[ind2]);
+            pos_f[n * 2 + 1] += inp_val_P[i] * q_ij * (ys[n] - ys[ind2]);
+        }
+    }
 
-                            });
-    END_TIME("Attractive Forces");
-    //printf("Attractive forces took %lf\n", (diff(start20,end20))/(double)1E6);
-                            
-
-
-
-
-
-
+    FILE *fp = nullptr;
+    if (measure_accuracy) {
+        char buffer[500];
+        sprintf(buffer, "temp/fft_gradient%d.txt", itTest);
+        fp = fopen(buffer, "w"); // open file for writing
+    }
     // Make the negative term, or F_rep in the equation 3 of the paper
+    END_TIME("Attractive Forces");
     double *neg_f = new double[N * 2];
     for (unsigned int i = 0; i < N; i++) {
-        neg_f[i * 2 + 0] = (xs[i] * potentialsQij[i * n_terms] - potentialsQij[i * n_terms + 1]) / sum_Q;
-        neg_f[i * 2 + 1] = (ys[i] * potentialsQij[i * n_terms] - potentialsQij[i * n_terms + 2]) / sum_Q;
+        double h2 = SquaredPotentialsQij[i * squared_n_terms];
+        double h3 = SquaredPotentialsQij[i * squared_n_terms + 1];
+        double h4 = SquaredPotentialsQij[i * squared_n_terms + 2];
+        neg_f[i * 2 + 0] = ( xs[i] *h4 - h2 ) / sum_Q;
+        neg_f[i * 2 + 1] = (ys[i] *h4 - h3 ) / sum_Q;
 
         dC[i * 2 + 0] = pos_f[i * 2] - neg_f[i * 2];
         dC[i * 2 + 1] = pos_f[i * 2 + 1] - neg_f[i * 2 + 1];
+
+        if (measure_accuracy) {
+            if (i < N) {
+                fprintf(fp, "%d, %.12e, %.12e, %.12e,%.12e,%.12e  %.12e\n", i, dC[i * 2], dC[i * 2 + 1], pos_f[i * 2],
+                        pos_f[i * 2 + 1], neg_f[i * 2] / sum_Q, neg_f[i * 2 + 1] / sum_Q);
+            }
+        }
+
     }
+
+    this->current_sum_Q = sum_Q;
+    if (measure_accuracy) {
+        fclose(fp);
+    }
+
+
+
+
+
+
+
+
+
+
+
 
     delete[] pos_f;
     delete[] neg_f;
-    delete[] potentialsQij;
-    delete[] chargesQij;
+    delete[] SquaredPotentialsQij;
+    delete[] NotSquaredPotentialsQij;
+    delete[] SquaredChargesQij;
+    delete[] NotSquaredChargesQij;
     delete[] xs;
     delete[] ys;
     delete[] box_lower_bounds;
