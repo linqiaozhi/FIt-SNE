@@ -60,7 +60,7 @@ using namespace std::chrono;
 #include <functional>
 
 #define _CRT_SECURE_NO_WARNINGS
-#define DF 0.001
+#define DF 0.01
 
 
 int itTest = 0;
@@ -788,7 +788,7 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
     double *pos_f = new double[N * 2];
     END_TIME("Total Interpolation");
         START_TIME;
-    double df = 1;
+    double df = DF;
     // Loop over all edges in the graph
     for (unsigned int n = 0; n < N; n++) {
         pos_f[n * 2 + 0] = 0;
