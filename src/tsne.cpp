@@ -72,17 +72,11 @@ double squared_cauchy(double x, double y) {
 }
 
 
-//double squared_cauchy_2d(double x1, double x2, double y1, double y2) {
-//    return pow(1.0 + pow(x1 - y1, 2) + pow(x2 - y2, 2), -2);
-//}
-
-double cauchy_2d(double x1, double x2, double y1, double y2) {
-    double df = DF;
+double cauchy_2d(double x1, double x2, double y1, double y2, double df) {
     return pow(1.0 + ((x1 - y1)*(x1-y1) + (x2 - y2)*(x2-y2))/df, -(df+1.0)/(double)2.0);
 }
 
-double squared_cauchy_2d(double x1, double x2, double y1, double y2) {
-    double df = DF;
+double squared_cauchy_2d(double x1, double x2, double y1, double y2, double df) {
     return pow(1.0 + ((x1 - y1)*(x1-y1) + (x2 - y2)*(x2-y2))/df, -(df+3.0)/(double)2.0);
 }
 
@@ -113,7 +107,7 @@ int TSNE::run(double *X, int N, int D, double *Y, int no_dims, double perplexity
               int nbody_algorithm, int knn_algo, double early_exag_coeff, double *costs,
               bool no_momentum_during_exag, int start_late_exag_iter, double late_exag_coeff, int n_trees, int search_k,
               int nterms, double intervals_per_integer, int min_num_intervals, unsigned int nthreads, 
-              int load_affinities, int perplexity_list_length, double *perplexity_list) {
+              int load_affinities, int perplexity_list_length, double *perplexity_list, double df ) {
 
     // Set random seed
     if (skip_random_init != true) {
@@ -438,7 +432,7 @@ int TSNE::run(double *X, int N, int D, double *Y, int no_dims, double perplexity
                                            min_num_intervals, nthreads);
                 } else {
                     computeFftGradient(P, row_P, col_P, val_P, Y, N, no_dims, dY, nterms, intervals_per_integer,
-                                       min_num_intervals, nthreads);
+                                       min_num_intervals, nthreads, df );
                 }
             } else if (nbody_algorithm == 1) {
                 // Otherwise, compute the negative gradient using the Barnes-Hut approximation
@@ -449,7 +443,7 @@ int TSNE::run(double *X, int N, int D, double *Y, int no_dims, double perplexity
         if (measure_accuracy) {
             computeGradient(P, row_P, col_P, val_P, Y, N, no_dims, dY, theta);
             computeFftGradient(P, row_P, col_P, val_P, Y, N, no_dims, dY, nterms, intervals_per_integer,
-                               min_num_intervals, nthreads);
+                               min_num_intervals, nthreads, df);
             computeExactGradientTest(Y, N, no_dims);
         }
 
@@ -689,7 +683,7 @@ void TSNE::computeFftGradientOneD(double *P, unsigned int *inp_row_P, unsigned i
 // Compute the gradient of the t-SNE cost function using the FFT interpolation based approximation
 void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *inp_col_P, double *inp_val_P, double *Y,
                               int N, int D, double *dC, int n_interpolation_points, double intervals_per_integer,
-                              int min_num_intervals, unsigned int nthreads) {
+                              int min_num_intervals, unsigned int nthreads, double df) {
 
     double min_coord = INFINITY;
     double max_coord = -INFINITY;
@@ -752,7 +746,7 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
     START_TIME;
     precompute_2d(max_coord, min_coord, max_coord, min_coord, n_boxes_per_dim, n_interpolation_points,
                   &squared_cauchy_2d,
-                  box_lower_bounds, box_upper_bounds, y_tilde_spacings, x_tilde, y_tilde, fft_kernel_tilde);
+                  box_lower_bounds, box_upper_bounds, y_tilde_spacings, x_tilde, y_tilde, fft_kernel_tilde, df);
     n_body_fft_2d(N, squared_n_terms, xs, ys, SquaredChargesQij, n_boxes_per_dim, n_interpolation_points, box_lower_bounds,
                   box_upper_bounds, y_tilde_spacings, fft_kernel_tilde, SquaredPotentialsQij, nthreads);
 
@@ -767,7 +761,7 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
 
     precompute_2d(max_coord, min_coord, max_coord, min_coord, n_boxes_per_dim, n_interpolation_points,
                   &cauchy_2d,
-                  box_lower_bounds, box_upper_bounds, y_tilde_spacings, x_tilde, y_tilde, fft_kernel_tilde);
+                  box_lower_bounds, box_upper_bounds, y_tilde_spacings, x_tilde, y_tilde, fft_kernel_tilde,df);
     n_body_fft_2d(N, not_squared_n_terms, xs, ys, NotSquaredChargesQij, n_boxes_per_dim, n_interpolation_points, box_lower_bounds,
                   box_upper_bounds, y_tilde_spacings, fft_kernel_tilde, NotSquaredPotentialsQij, nthreads);
 
@@ -788,7 +782,6 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
     double *pos_f = new double[N * 2];
     END_TIME("Total Interpolation");
         START_TIME;
-    double df = DF;
     // Loop over all edges in the graph
     for (unsigned int n = 0; n < N; n++) {
         pos_f[n * 2 + 0] = 0;
@@ -824,8 +817,8 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
         neg_f[i * 2 + 0] = ( xs[i] *h4 - h2 ) / sum_Q;
         neg_f[i * 2 + 1] = (ys[i] *h4 - h3 ) / sum_Q;
 
-        dC[i * 2 + 0] = pos_f[i * 2] - neg_f[i * 2];
-        dC[i * 2 + 1] = pos_f[i * 2 + 1] - neg_f[i * 2 + 1];
+        dC[i * 2 + 0] = (pos_f[i * 2] - neg_f[i * 2])*( ( df+1.0)/(2*df));
+        dC[i * 2 + 1] = (pos_f[i * 2 + 1] - neg_f[i * 2 + 1])*( ( df+1.0)/(2*df));
 
         if (measure_accuracy) {
             if (i < N) {
@@ -1585,7 +1578,7 @@ bool TSNE::load_data(const char *data_path, double **data, double **Y, int *n,
 	int *start_late_exag_iter, double *late_exag_coeff, int *nterms,
 	double *intervals_per_integer, int *min_num_intervals,
 	bool *skip_random_init, int *load_affinities,
-    int *perplexity_list_length, double **perplexity_list) {
+    int *perplexity_list_length, double **perplexity_list, double * df) {
 
 	FILE *h;
 	if((h = fopen(data_path, "r+b")) == NULL) {
@@ -1645,6 +1638,9 @@ bool TSNE::load_data(const char *data_path, double **data, double **Y, int *n,
 		result = fread(rand_seed, sizeof(int), 1, h);       // random seed
 	}
 	if(!feof(h)) {
+            result = fread(df, sizeof(double),1,h);  // Number of degrees of freedom of the kernel
+        }
+	if(!feof(h)) {
 		result = fread(load_affinities, sizeof(int), 1, h); // to load or to save affinities
 	}
 
@@ -1662,7 +1658,6 @@ bool TSNE::load_data(const char *data_path, double **data, double **Y, int *n,
 	} else{
 		*skip_random_init = false;
 	}
-
 	fclose(h);
 	printf("Read the following parameters:\n\t n %d by d %d dataset, theta %lf,\n"
 			"\t perplexity %lf, no_dims %d, max_iter %d,\n"
@@ -1672,14 +1667,14 @@ bool TSNE::load_data(const char *data_path, double **data, double **Y, int *n,
 			"\t knn_algo %d, early_exag_coeff %lf,\n"
 			"\t no_momentum_during_exag %d, n_trees %d, search_k %d,\n"
 			"\t start_late_exag_iter %d, late_exag_coeff %lf\n"
-			"\t nterms %d, interval_per_integer %lf, min_num_intervals %d\n",
+			"\t nterms %d, interval_per_integer %lf, min_num_intervals %d, t-dist df %lf\n",
 			*n, *d, *theta, *perplexity,
 			*no_dims, *max_iter,*stop_lying_iter,
             *mom_switch_iter, *momentum, *final_momentum, *learning_rate,
 			*K, *sigma, *nbody_algo, *knn_algo, *early_exag_coeff,
 			*no_momentum_during_exag, *n_trees, *search_k,
 			*start_late_exag_iter, *late_exag_coeff,
-			*nterms, *intervals_per_integer, *min_num_intervals);
+			*nterms, *intervals_per_integer, *min_num_intervals, *df);
 
 	printf("Read the %i x %i data matrix successfully. X[0,0] = %lf\n", *n, *d, *data[0]);
 
@@ -1741,6 +1736,7 @@ int main(int argc, char *argv[]) {
 
     double *perplexity_list;
     int perplexity_list_length;
+    double df;
 
 	data_path = "data.dat";
 	result_path = "result.dat";
@@ -1770,7 +1766,7 @@ int main(int argc, char *argv[]) {
 				&n_trees, &search_k, &start_late_exag_iter,
 				&late_exag_coeff, &nterms, &intervals_per_integer,
 				&min_num_intervals, &skip_random_init, &load_affinities,
-                &perplexity_list_length, &perplexity_list)) {
+                &perplexity_list_length, &perplexity_list, &df)) {
 
 		bool no_momentum_during_exag_bool = true;
 		if (no_momentum_during_exag == 0) no_momentum_during_exag_bool = false;
@@ -1783,7 +1779,7 @@ int main(int argc, char *argv[]) {
 				stop_lying_iter, mom_switch_iter, momentum, final_momentum, learning_rate, K, sigma, nbody_algo, knn_algo, 
                 early_exag_coeff, costs, no_momentum_during_exag_bool, start_late_exag_iter, late_exag_coeff, n_trees,search_k, 
 				nterms, intervals_per_integer, min_num_intervals, nthreads, load_affinities,
-                perplexity_list_length, perplexity_list);
+                perplexity_list_length, perplexity_list, df);
 
 		if (error_code < 0) {
 			exit(error_code);
