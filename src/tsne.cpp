@@ -783,23 +783,22 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
     END_TIME("Total Interpolation");
         START_TIME;
     // Loop over all edges in the graph
-    for (unsigned int n = 0; n < N; n++) {
-        pos_f[n * 2 + 0] = 0;
-        pos_f[n * 2 + 1] = 0;
+                PARALLEL_FOR(nthreads, N, {
+                                double dim1 = 0;
+                                double dim2 = 0;
 
-        for (unsigned int i = inp_row_P[n]; i < inp_row_P[n + 1]; i++) {
-            // Compute pairwise distance and Q-value
-            ind2 = inp_col_P[i];
-            //double d_ij = (xs[n] - xs[ind2]) * (xs[n] - xs[ind2]) + (ys[n] - ys[ind2]) * (ys[n] - ys[ind2]);
-            //double d_ij = cauchy_2d(xs[n] , ys[n],xs[ind2], ys[ind2]);
-            //double q_ij = 1 / (1 + d_ij);
-            //double q_ij = cauchy_2d(xs[n] , ys[n],xs[ind2], ys[ind2]);
-            double q_ij = pow(1.0 + ((xs[n] - xs[ind2])*(xs[n] - xs[ind2]) + (ys[n] - ys[ind2])*(ys[n] - ys[ind2]))/df,-1.0);
+                                for (unsigned int i = inp_row_P[loop_i]; i < inp_row_P[loop_i + 1]; i++) {
+                                // Compute pairwise distance and Q-value
+                                    unsigned int ind3 = inp_col_P[i];
+                                    double d_ij = (xs[loop_i] - xs[ind3]) * (xs[loop_i] - xs[ind3]) + (ys[loop_i] - ys[ind3]) * (ys[loop_i] - ys[ind3]);
+                                    double q_ij = 1 / (1 + d_ij/df);
 
-            pos_f[n * 2 + 0] += inp_val_P[i] * q_ij * (xs[n] - xs[ind2]);
-            pos_f[n * 2 + 1] += inp_val_P[i] * q_ij * (ys[n] - ys[ind2]);
-        }
-    }
+                                    dim1 += inp_val_P[i] * q_ij * (xs[loop_i] - xs[ind3]);
+                                    dim2 += inp_val_P[i] * q_ij * (ys[loop_i] - ys[ind3]);
+                                }
+                                pos_f[loop_i * 2 + 0] = dim1;
+                                pos_f[loop_i * 2 + 1] = dim2;
+                  });
 
     FILE *fp = nullptr;
     if (measure_accuracy) {
