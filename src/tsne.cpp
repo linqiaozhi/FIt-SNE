@@ -798,7 +798,7 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
                                 // Compute pairwise distance and Q-value
                                     unsigned int ind3 = inp_col_P[i];
                                     double d_ij = (xs[loop_i] - xs[ind3]) * (xs[loop_i] - xs[ind3]) + (ys[loop_i] - ys[ind3]) * (ys[loop_i] - ys[ind3]);
-                                    double q_ij = 1 / (1 + d_ij);
+                                    double q_ij = 1 / (1 + d_ij/df);
 
                                     dim1 += inp_val_P[i] * q_ij * (xs[loop_i] - xs[ind3]);
                                     dim2 += inp_val_P[i] * q_ij * (ys[loop_i] - ys[ind3]);
