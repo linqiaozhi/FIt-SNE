@@ -41,6 +41,7 @@
 #include <math.h>
 #include "annoylib.h"
 #include "kissrandom.h"
+#include <random>
 #include <thread>
 #include <float.h>
 #include <cstring>
@@ -210,6 +211,8 @@ int TSNE::run(double *X, int N, int D, double *Y, int no_dims, double perplexity
 			double sum_P = .0;
 			for (int i = 0; i < N * N; i++) sum_P += P[i];
 			for (int i = 0; i < N * N; i++) P[i] /= sum_P;
+                       //for (int i = 0; i < N ; i++) printf( "%d: %e\n", i, P[i]);
+                        //printf("P[4]: %lf, P[N/2+5]: %lf\n", P[4], P[N/2 + 5]);
 			//sum_P is just a cute way of writing 2N
 			printf("Finished exact calculation of the P.  Sum_p: %lf \n", sum_P);
 		}
@@ -423,7 +426,7 @@ int TSNE::run(double *X, int N, int D, double *Y, int no_dims, double perplexity
 
         if (exact) {
             // Compute the exact gradient using full P matrix
-            computeExactGradient(P, Y, N, no_dims, dY);
+            computeExactGradient(P, Y, N, no_dims, dY, df);
         } else {
             if (nbody_algorithm == 2) {
                 // Use FFT accelerated interpolation based negative gradients
@@ -490,15 +493,19 @@ int TSNE::run(double *X, int N, int D, double *Y, int no_dims, double perplexity
         START_TIME;
             double C = .0;
             if (exact) {
-                C = evaluateError(P, Y, N, no_dims);
+                C = evaluateError(P, Y, N, no_dims, df);
             }else{
                 if (nbody_algorithm == 2) {
-                    C = evaluateErrorFft(row_P, col_P, val_P, Y, N, no_dims,nthreads);
+                    C = evaluateErrorFft(row_P, col_P, val_P, Y, N, no_dims,nthreads, df);
                 }else {
                     C = evaluateError(row_P, col_P, val_P, Y, N, no_dims,theta, nthreads);
                 }
             }
             
+            //if (iter==max_iter-1){
+            //    printf("Printing Qs\n");
+            //    printQs(Y, N, no_dims,nthreads, df);
+            //}
             // Adjusting the KL divergence if exaggeration is currently turned on
             // See https://github.com/pavlin-policar/fastTSNE/blob/master/notes/notes.pdf, Section 3.2
             if (iter < stop_lying_iter && stop_lying_iter != -1) {
@@ -512,7 +519,7 @@ int TSNE::run(double *X, int N, int D, double *Y, int no_dims, double perplexity
     END_TIME("Computing Error");
             
             std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
-            printf("Iteration %d (50 iterations in %.2f seconds), cost %f\n", iter+1, std::chrono::duration_cast<std::chrono::milliseconds>(now-start_time).count()/(float)1000.0, C);
+            printf("Iteration %d (50 iterations in %.2f seconds), cost %e\n", iter+1, std::chrono::duration_cast<std::chrono::milliseconds>(now-start_time).count()/(float)1000.0, C);
             start_time = std::chrono::steady_clock::now();
         }
     }
@@ -791,7 +798,7 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
                                 // Compute pairwise distance and Q-value
                                     unsigned int ind3 = inp_col_P[i];
                                     double d_ij = (xs[loop_i] - xs[ind3]) * (xs[loop_i] - xs[ind3]) + (ys[loop_i] - ys[ind3]) * (ys[loop_i] - ys[ind3]);
-                                    double q_ij = 1 / (1 + d_ij/df);
+                                    double q_ij = 1 / (1 + d_ij);
 
                                     dim1 += inp_val_P[i] * q_ij * (xs[loop_i] - xs[ind3]);
                                     dim2 += inp_val_P[i] * q_ij * (ys[loop_i] - ys[ind3]);
@@ -917,7 +924,7 @@ void TSNE::computeExactGradientTest(double *Y, int N, int D) {
 
 
 // Compute the exact gradient of the t-SNE cost function
-void TSNE::computeExactGradient(double *P, double *Y, int N, int D, double *dC) {
+void TSNE::computeExactGradient(double *P, double *Y, int N, int D, double *dC, double df) {
     // Make sure the current gradient contains zeros
     for (int i = 0; i < N * D; i++) dC[i] = 0.0;
 
@@ -930,12 +937,28 @@ void TSNE::computeExactGradient(double *P, double *Y, int N, int D, double *dC) 
     auto *Q = (double *) malloc(N * N * sizeof(double));
     if (Q == nullptr) throw std::bad_alloc();
 
+
+//    nN = 0;
+//    int nD = 0;
+//    for (int n = 0; n < N; n++) {
+//        int mD = 0;
+//        for (int m = 0; m < N; m++) {
+//            float p_ij = 
+//P[nN + m]
+//                
+//                double mult = (P[nN + m] - (Q[nN + m] / sum_Q)) * Q[nN + m];
+//
+//        }
+//    }
+
+
+
     double sum_Q = .0;
     int nN = 0;
     for (int n = 0; n < N; n++) {
         for (int m = 0; m < N; m++) {
             if (n != m) {
-                Q[nN + m] = 1 / (1 + DD[nN + m]);
+                Q[nN + m] = 1.0 / pow(1.0 + DD[nN + m]/(double)df, (df+1.0)/(double)(2.0));
                 sum_Q += Q[nN + m];
             }
         }
@@ -949,9 +972,10 @@ void TSNE::computeExactGradient(double *P, double *Y, int N, int D, double *dC) 
         int mD = 0;
         for (int m = 0; m < N; m++) {
             if (n != m) {
-                double mult = (P[nN + m] - (Q[nN + m] / sum_Q)) * Q[nN + m];
+                double mult = (P[nN + m] - (Q[nN + m] / sum_Q)) * pow(Q[nN + m], 2.0/(df+1.0));
                 for (int d = 0; d < D; d++) {
-                    dC[nD + d] += (Y[nD + d] - Y[mD + d]) * mult;
+                    dC[nD + d] += (Y[nD + d] - Y[mD + d]) * mult*( ( df+1.0)/(2.0*df));
+                    //dC[nD + d] += (Y[nD + d] - Y[mD + d]) * mult;
                 }
             }
             mD += D;
@@ -965,7 +989,7 @@ void TSNE::computeExactGradient(double *P, double *Y, int N, int D, double *dC) 
 
 
 // Evaluate t-SNE cost function (exactly)
-double TSNE::evaluateError(double *P, double *Y, int N, int D) {
+double TSNE::evaluateError(double *P, double *Y, int N, int D, double df) {
     // Compute the squared Euclidean distance matrix
     double *DD = (double *) malloc(N * N * sizeof(double));
     double *Q = (double *) malloc(N * N * sizeof(double));
@@ -981,13 +1005,16 @@ double TSNE::evaluateError(double *P, double *Y, int N, int D) {
     for (int n = 0; n < N; n++) {
         for (int m = 0; m < N; m++) {
             if (n != m) {
-                Q[nN + m] = 1 / (1 + DD[nN + m]);
+                Q[nN + m] = 1.0 / pow(1.0 + DD[nN + m]/(double)df, (df+1.0)/(double)(2.0));
                 sum_Q += Q[nN + m];
             } else Q[nN + m] = DBL_MIN;
         }
         nN += N;
     }
     for (int i = 0; i < N * N; i++) Q[i] /= sum_Q;
+    for (int i = 0; i < N; i++) printf("Q[%d]: %e\n", i, Q[i]);
+
+//printf("Q[N*N/2+1]: %e, Q[N*N-1]: %e\n", Q[N*N/2+1], Q[N*N/2+2]);
 
     // Sum t-SNE error
     double C = .0;
@@ -1000,9 +1027,50 @@ double TSNE::evaluateError(double *P, double *Y, int N, int D) {
     free(Q);
     return C;
 }
+// Evaluate t-SNE cost function (approximately) using FFT
+double TSNE::printQs(double *Y, int N, int D,unsigned int nthreads, double df) {
+    // Get estimate of normalization term
+
+    double sum_Q = this->current_sum_Q;
+
+    char buffer[500];
+    sprintf(buffer, "temp/Qs.csv");
+    FILE *fp = nullptr;
+    fp = fopen(buffer, "w"); // Open file for writing
+    // Loop over all edges to compute t-SNE error
+    std::random_device rd;     // only used once to initialise (seed) engine
+    std::mt19937 rng(3);    // random-number engine used (Mersenne-Twister in this case)
+    double C = .0;
+    for (int j =0; j<100; j++){
+        std::uniform_int_distribution<int> uni(0,N-1); // guaranteed unbiased
+        auto random_integer = uni(rng);
+        int loop_i = random_integer;
+        double *buff = (double *) calloc(D, sizeof(double));
+        int ind1 = loop_i * D;
+        fprintf(fp, "%d", loop_i);
+        for (int i = 0; i < N; i++) {
+            fprintf(fp, ",");
+            double pre_norm_Q = .0;
+            int ind2 = i * D;
+            for (int d = 0; d < D; d++) buff[d] = Y[ind1 + d];
+            for (int d = 0; d < D; d++) buff[d] -= Y[ind2 + d];
+            for (int d = 0; d < D; d++) pre_norm_Q += buff[d] * buff[d];
+            pre_norm_Q = pow(1.0 / (1.0 + pre_norm_Q/df),  (df + 1.0)/((double)2.0)) ;
+            //printf("ind1: %d, ind2: %d, Y1: %lf, Y2: %lf, Q: %lf, sum_Q: %lf", ind1, ind2, Y[ind1 + 1], Y[ind2 + 1], pre_norm_Q, sum_Q);
+            double Q = pre_norm_Q /sum_Q;
+            fprintf(fp, "%lf", Q);
+        }
+            fprintf(fp, "\n");
+        free(buff);
+    }
+    fclose(fp);
+
+    // Clean up memory
+    return C;
+}
 
 // Evaluate t-SNE cost function (approximately) using FFT
-double TSNE::evaluateErrorFft(unsigned int *row_P, unsigned int *col_P, double *val_P, double *Y, int N, int D,unsigned int nthreads) {
+double TSNE::evaluateErrorFft(unsigned int *row_P, unsigned int *col_P, double *val_P, double *Y, int N, int D,unsigned int nthreads, double df) {
     // Get estimate of normalization term
 
     double sum_Q = this->current_sum_Q;
@@ -1019,7 +1087,7 @@ double TSNE::evaluateErrorFft(unsigned int *row_P, unsigned int *col_P, double *
             for (int d = 0; d < D; d++) buff[d] = Y[ind1 + d];
             for (int d = 0; d < D; d++) buff[d] -= Y[ind2 + d];
             for (int d = 0; d < D; d++) Q += buff[d] * buff[d];
-            Q = (1.0 / (1.0 + Q)) / sum_Q;
+            Q = pow(1.0 / (1.0 + Q/df),  (df + 1.0)/((double)2.0)) / sum_Q;
             temp += val_P[i] * log((val_P[i] + FLT_MIN) / (Q + FLT_MIN));
         }
         C += temp;

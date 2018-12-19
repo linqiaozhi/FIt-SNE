@@ -73,15 +73,17 @@ private:
                                     double intervals_per_integer, int min_num_intervals, unsigned int nthreads);
 
     void computeExactGradient(double *P, double *Y, int N, int D, double *dC);
+    void computeExactGradient(double *P, double *Y, int N, int D, double *dC, double df);
 
     void computeExactGradientTest(double *Y, int N, int D);
 
-    double evaluateError(double *P, double *Y, int N, int D);
+    double evaluateError(double *P, double *Y, int N, int D, double df);
 
     double evaluateError(unsigned int *row_P, unsigned int *col_P, double *val_P, double *Y, int N, int D,
                          double theta, unsigned int nthreads);
 
-    double evaluateErrorFft(unsigned int *row_P, unsigned int *col_P, double *val_P, double *Y, int N, int D, unsigned int nthreads);
+    double evaluateErrorFft(unsigned int *row_P, unsigned int *col_P, double *val_P, double *Y, int N, int D, unsigned int nthreads, double df);
+    double printQs( double *Y, int N, int D, unsigned int nthreads, double df);
     void zeroMean(double *X, int N, int D);
 
 	double distances2similarities(double *D, double *P, int N, int n, double perplexity, double sigma, bool ifSquared);
