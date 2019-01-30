@@ -45,11 +45,10 @@ fastDecomp <- rsvd(Xc, 50,q=4);
 fastDecomp$d
 PCs<- fastDecomp$u %*% diag(fastDecomp$d);
 
-Xg_all_0.1<- fftRtsne(PCs, 2,  df=0.1 ,rand_seed=4, learning_rate=1000);
+Xg_all_0.1<- fftRtsne(PCs, 2,  df=0.55 ,rand_seed=4, learning_rate=100, max_iter=2000);
 idx <- which(y == 0)
-
-Xg_0_0.1 <- fftRtsne(PCs[idx,], 2,  df=0.1 ,rand_seed=4, learning_rate=1000);
-Xg_0_m0.9 <- fftRtsne(PCs[idx,], 2,  df=-0.9 ,rand_seed=4, learning_rate=1000);
+Xg_0_0.1 <- fftRtsne(PCs[idx,], 2,  df=0.55 ,rand_seed=4, learning_rate=100, max_iter=2000);
+Xg_0_m0.9 <- fftRtsne(PCs[idx,], 2,  df=0.05 ,rand_seed=4, learning_rate=100, max_iter=2000);
 
 (clust <- dbscan(Xg_all_0.1[idx,], eps= 2, minPts=100))
 (clust2 <- dbscan(Xg_0_m0.9, eps= 5, minPts= 100))
@@ -60,15 +59,16 @@ t <- theme(axis.line=element_blank(),axis.text.x=element_blank(),
           axis.title.y=element_blank(),legend.position="none",
           panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank(),
           panel.grid.minor=element_blank(),plot.background=element_blank())
-
 col <- clust2$cluster
+
 g1 <- ggplot(data.frame(Xg_all_0.1[idx,],col=factor(col)), aes(x=X1,y=X2,color=col)) + geom_point(size=0.5)  +  theme(plot.title = element_text(size=8)) +  
-    ggtitle(expression(paste(bold("A) "),"Embedding all, showing digit 0, df=0.1")))+ guides(color=FALSE) + t
+    ggtitle(expression(paste(bold("A) "),"Embedding all, showing digit 0, df=0.1")))+ guides(color=FALSE) #+ t
 g2 <- ggplot(data.frame(Xg_0_0.1,col=factor(col)), aes(x=X1,y=X2,color=col)) + geom_point(size=0.5)  +  theme(plot.title = element_text(size=8)) + 
-    ggtitle(expression(paste(bold("B) "),"Embedding only 0, df=0.1")))+ guides(color=FALSE) +t 
+    ggtitle(expression(paste(bold("B) "),"Embedding only 0, df=0.1")))+ guides(color=FALSE)# +t 
 g3 <- ggplot(data.frame(Xg_0_m0.9,col=factor(col)), aes(x=X1,y=X2,color=col)) + geom_point(size=0.5)  +  theme(plot.title = element_text(size=8)) + 
-    ggtitle(expression(paste(bold("C) "),"Embedding only 0, df=-0.9"))) + guides(color=FALSE) +t
+    ggtitle(expression(paste(bold("C) "),"Embedding only 0, df=-0.9"))) + guides(color=FALSE)# +t
 (g <- grid.arrange(g1,g2,g3, nrow=1))
+
 ggsave("embeddings_single_digit.pdf", g)
 
 

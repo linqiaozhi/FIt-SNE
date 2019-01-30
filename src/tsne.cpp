@@ -74,11 +74,11 @@ double squared_cauchy(double x, double y) {
 
 
 double cauchy_2d(double x1, double x2, double y1, double y2, double df) {
-    return pow(1.0 + ((x1 - y1)*(x1-y1) + (x2 - y2)*(x2-y2))/df, -(df+1.0)/(double)2.0);
+    return pow(1.0 + ((x1 - y1)*(x1-y1) + (x2 - y2)*(x2-y2))/df, -(df));
 }
 
 double squared_cauchy_2d(double x1, double x2, double y1, double y2, double df) {
-    return pow(1.0 + ((x1 - y1)*(x1-y1) + (x2 - y2)*(x2-y2))/df, -(df+3.0)/(double)2.0);
+    return pow(1.0 + ((x1 - y1)*(x1-y1) + (x2 - y2)*(x2-y2))/df, -(df+1.0)/df);
 }
 
 using namespace std;
@@ -823,8 +823,8 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
         neg_f[i * 2 + 0] = ( xs[i] *h4 - h2 ) / sum_Q;
         neg_f[i * 2 + 1] = (ys[i] *h4 - h3 ) / sum_Q;
 
-        dC[i * 2 + 0] = (pos_f[i * 2] - neg_f[i * 2])*( ( df+1.0)/(2*df));
-        dC[i * 2 + 1] = (pos_f[i * 2 + 1] - neg_f[i * 2 + 1])*( ( df+1.0)/(2*df));
+        dC[i * 2 + 0] = (pos_f[i * 2] - neg_f[i * 2]);
+        dC[i * 2 + 1] = (pos_f[i * 2 + 1] - neg_f[i * 2 + 1]);
 
         if (measure_accuracy) {
             if (i < N) {
@@ -1011,8 +1011,9 @@ double TSNE::evaluateError(double *P, double *Y, int N, int D, double df) {
         }
         nN += N;
     }
+    //printf("sum_Q: %e", sum_Q);
     for (int i = 0; i < N * N; i++) Q[i] /= sum_Q;
-    for (int i = 0; i < N; i++) printf("Q[%d]: %e\n", i, Q[i]);
+    //  for (int i = 0; i < N; i++) printf("Q[%d]: %e\n", i, Q[i]);
 
 //printf("Q[N*N/2+1]: %e, Q[N*N-1]: %e\n", Q[N*N/2+1], Q[N*N/2+2]);
 
@@ -1087,7 +1088,7 @@ double TSNE::evaluateErrorFft(unsigned int *row_P, unsigned int *col_P, double *
             for (int d = 0; d < D; d++) buff[d] = Y[ind1 + d];
             for (int d = 0; d < D; d++) buff[d] -= Y[ind2 + d];
             for (int d = 0; d < D; d++) Q += buff[d] * buff[d];
-            Q = pow(1.0 / (1.0 + Q/df),  (df + 1.0)/((double)2.0)) / sum_Q;
+            Q = pow(1.0 / (1.0 + Q/df),  df) / sum_Q;
             temp += val_P[i] * log((val_P[i] + FLT_MIN) / (Q + FLT_MIN));
         }
         C += temp;
