@@ -78,7 +78,7 @@ double cauchy_2d(double x1, double x2, double y1, double y2, double df) {
 }
 
 double squared_cauchy_2d(double x1, double x2, double y1, double y2, double df) {
-    return pow(1.0 + ((x1 - y1)*(x1-y1) + (x2 - y2)*(x2-y2))/df, -(df+1.0)/df);
+    return pow(1.0 + ((x1 - y1)*(x1-y1) + (x2 - y2)*(x2-y2))/df, -(df+1.0));
 }
 
 using namespace std;
