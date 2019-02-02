@@ -75,7 +75,7 @@ private:
     void computeExactGradient(double *P, double *Y, int N, int D, double *dC);
     void computeExactGradient(double *P, double *Y, int N, int D, double *dC, double df);
 
-    void computeExactGradientTest(double *Y, int N, int D);
+    void computeExactGradientTest(double *Y, int N, int D, double df);
 
     double evaluateError(double *P, double *Y, int N, int D, double df);
 

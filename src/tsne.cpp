@@ -110,17 +110,6 @@ int TSNE::run(double *X, int N, int D, double *Y, int no_dims, double perplexity
               int nterms, double intervals_per_integer, int min_num_intervals, unsigned int nthreads, 
               int load_affinities, int perplexity_list_length, double *perplexity_list, double df ) {
 
-    // Set random seed
-    if (skip_random_init != true) {
-        if (rand_seed >= 0) {
-            printf("Using random seed: %d\n", rand_seed);
-            srand((unsigned int) rand_seed);
-        } else {
-            printf("Using current time as random seed...\n");
-            srand(time(NULL));
-        }
-    }
-
     // Some logging messages
     if (N - 1 < 3 * perplexity) {
         printf("Perplexity too large for the number of data points!\n");
@@ -365,6 +354,17 @@ int TSNE::run(double *X, int N, int D, double *Y, int no_dims, double perplexity
 		}
 	}
 
+    // Set random seed
+    if (skip_random_init != true) {
+        if (rand_seed >= 0) {
+            printf("Using random seed: %d\n", rand_seed);
+            srand((unsigned int) rand_seed);
+        } else {
+            printf("Using current time as random seed...\n");
+            srand(time(NULL));
+        }
+    }
+
     // Initialize solution (randomly)
     if (skip_random_init != true) {
 		printf("Randomly initializing the solution.\n");
@@ -444,10 +444,10 @@ int TSNE::run(double *X, int N, int D, double *Y, int no_dims, double perplexity
         }
 
         if (measure_accuracy) {
-            computeGradient(P, row_P, col_P, val_P, Y, N, no_dims, dY, theta);
+            //computeGradient(P, row_P, col_P, val_P, Y, N, no_dims, dY, theta);
             computeFftGradient(P, row_P, col_P, val_P, Y, N, no_dims, dY, nterms, intervals_per_integer,
                                min_num_intervals, nthreads, df);
-            computeExactGradientTest(Y, N, no_dims);
+            computeExactGradientTest(Y, N, no_dims,df);
         }
 
         // We can turn off momentum/gains until after the early exaggeration phase is completed
@@ -692,12 +692,30 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
                               int N, int D, double *dC, int n_interpolation_points, double intervals_per_integer,
                               int min_num_intervals, unsigned int nthreads, double df) {
 
+
+    // Zero out the gradient
+    for (int i = 0; i < N * D; i++) dC[i] = 0.0;
+
+    // For convenience, split the x and y coordinate values
+    auto *xs = new double[N];
+    auto *ys = new double[N];
+
     double min_coord = INFINITY;
     double max_coord = -INFINITY;
+    // Find the min/max values of the x and y coordinates
+    for (unsigned long i = 0; i < N; i++) {
+        xs[i] = Y[i * 2 + 0];
+        ys[i] = Y[i * 2 + 1];
+        if (xs[i] > max_coord) max_coord = xs[i];
+        else if (xs[i] < min_coord) min_coord = xs[i];
+        if (ys[i] > max_coord) max_coord = ys[i];
+        else if (ys[i] < min_coord) min_coord = ys[i];
+    }
     // Compute the number of boxes in a single dimension and the total number of boxes in 2d
     auto n_boxes_per_dim = static_cast<int>(fmax(min_num_intervals, (max_coord - min_coord) / intervals_per_integer));
 
 
+    //printf("min_coord: %lf, max_coord: %lf, n_boxes_per_dim: %d, (max_coord - min_coord) / intervals_per_integer) %d\n", min_coord, max_coord, n_boxes_per_dim, static_cast<int>(  (max_coord - min_coord) / intervals_per_integer));
     // FFTW works faster on numbers that can be written as  2^a 3^b 5^c 7^d
     // 11^e 13^f, where e+f is either 0 or 1, and the other exponents are
     // arbitrary
@@ -709,23 +727,7 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
         n_boxes_per_dim = allowed_n_boxes_per_dim[chosen_i];
     }
 
-    // Zero out the gradient
-    for (int i = 0; i < N * D; i++) dC[i] = 0.0;
-
-    // For convenience, split the x and y coordinate values
-    auto *xs = new double[N];
-    auto *ys = new double[N];
-
-    // Find the min/max values of the x and y coordinates
-    for (unsigned long i = 0; i < N; i++) {
-        xs[i] = Y[i * 2 + 0];
-        ys[i] = Y[i * 2 + 1];
-        if (xs[i] > max_coord) max_coord = xs[i];
-        else if (xs[i] < min_coord) min_coord = xs[i];
-        if (ys[i] > max_coord) max_coord = ys[i];
-        else if (ys[i] < min_coord) min_coord = ys[i];
-    }
-
+    //printf(" n_boxes_per_dim: %d\n", n_boxes_per_dim );
     // The number of "charges" or s+2 sums i.e. number of kernel sums
     int squared_n_terms = 3;
     auto *SquaredChargesQij = new double[N * squared_n_terms];
@@ -781,6 +783,7 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
         double h1 = NotSquaredPotentialsQij[i * not_squared_n_terms+ 0];
         sum_Q += h1;
     }
+    sum_Q -= N;
 
     // Now, figure out the Gaussian component of the gradient. This corresponds to the "attraction" term of the
     // gradient. It was calculated using a fast KNN approach, so here we just use the results that were passed to this
@@ -807,12 +810,6 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
                                 pos_f[loop_i * 2 + 1] = dim2;
                   });
 
-    FILE *fp = nullptr;
-    if (measure_accuracy) {
-        char buffer[500];
-        sprintf(buffer, "temp/fft_gradient%d.txt", itTest);
-        fp = fopen(buffer, "w"); // open file for writing
-    }
     // Make the negative term, or F_rep in the equation 3 of the paper
     END_TIME("Attractive Forces");
     double *neg_f = new double[N * 2];
@@ -826,19 +823,18 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
         dC[i * 2 + 0] = (pos_f[i * 2] - neg_f[i * 2]);
         dC[i * 2 + 1] = (pos_f[i * 2 + 1] - neg_f[i * 2 + 1]);
 
-        if (measure_accuracy) {
-            if (i < N) {
-                fprintf(fp, "%d, %.12e, %.12e, %.12e,%.12e,%.12e  %.12e\n", i, dC[i * 2], dC[i * 2 + 1], pos_f[i * 2],
-                        pos_f[i * 2 + 1], neg_f[i * 2] / sum_Q, neg_f[i * 2 + 1] / sum_Q);
-            }
-        }
 
     }
 
     this->current_sum_Q = sum_Q;
-    if (measure_accuracy) {
+        FILE *fp = nullptr;
+        char buffer[500];
+        sprintf(buffer, "temp/fft_gradient%d.txt", itTest);
+        fp = fopen(buffer, "w"); // Open file for writing
+        for (int i = 0; i < N; i++) {
+                fprintf(fp, "%d,%.12e,%.12e\n", i, neg_f[i * 2] , neg_f[i * 2 + 1]);
+        }
         fclose(fp);
-    }
 
 
 
@@ -868,8 +864,8 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
 }
 
 
-void TSNE::computeExactGradientTest(double *Y, int N, int D) {
-    // Compute the squared Euclidean distance matrix
+void TSNE::computeExactGradientTest(double *Y, int N, int D, double df ) {
+  // Compute the squared Euclidean distance matrix
     double *DD = (double *) malloc(N * N * sizeof(double));
     if (DD == NULL) {
         printf("Memory allocation failed!\n");
@@ -888,7 +884,7 @@ void TSNE::computeExactGradientTest(double *Y, int N, int D) {
     for (int n = 0; n < N; n++) {
         for (int m = 0; m < N; m++) {
             if (n != m) {
-                Q[nN + m] = 1 / (1 + DD[nN + m]);
+                Q[nN + m] = 1.0 / pow(1.0 + DD[nN + m]/(double)df, (df));
                 sum_Q += Q[nN + m];
             }
         }
@@ -904,22 +900,26 @@ void TSNE::computeExactGradientTest(double *Y, int N, int D) {
     for (int n = 0; n < N; n++) {
         double testQij = 0;
         double testPos = 0;
-        double testNeg = 0;
+        double testNeg1 = 0;
+        double testNeg2 = 0;
         double testdC = 0;
         int mD = 0;
         for (int m = 0; m < N; m++) {
             if (n != m) {
-                testNeg += Q[nN + m] * Q[nN + m] * (Y[nD + 0] - Y[mD + 0]) / sum_Q;
+                testNeg1 += pow(Q[nN + m],(df +1.0)/df) * (Y[nD + 0] - Y[mD + 0]) / sum_Q;
+                testNeg2 += pow(Q[nN + m],(df +1.0)/df) * (Y[nD + 1] - Y[mD + 1]) / sum_Q;
             }
             mD += D;
         }
-        fprintf(fp, "%d, %.12e\n", n, testNeg);
+        fprintf(fp, "%d, %.12e, %.12e\n", n, testNeg1,testNeg2);
+
         nN += N;
         nD += D;
     }
     fclose(fp);
     free(DD);
     free(Q);
+
 }
 
 
@@ -958,7 +958,7 @@ void TSNE::computeExactGradient(double *P, double *Y, int N, int D, double *dC, 
     for (int n = 0; n < N; n++) {
         for (int m = 0; m < N; m++) {
             if (n != m) {
-                Q[nN + m] = 1.0 / pow(1.0 + DD[nN + m]/(double)df, (df+1.0)/(double)(2.0));
+                Q[nN + m] = 1.0 / pow(1.0 + DD[nN + m]/(double)df, (df));
                 sum_Q += Q[nN + m];
             }
         }
@@ -972,9 +972,9 @@ void TSNE::computeExactGradient(double *P, double *Y, int N, int D, double *dC, 
         int mD = 0;
         for (int m = 0; m < N; m++) {
             if (n != m) {
-                double mult = (P[nN + m] - (Q[nN + m] / sum_Q)) * pow(Q[nN + m], 2.0/(df+1.0));
+                double mult = (P[nN + m] - (Q[nN + m] / sum_Q)) * pow(Q[nN + m], 1.0/df);
                 for (int d = 0; d < D; d++) {
-                    dC[nD + d] += (Y[nD + d] - Y[mD + d]) * mult*( ( df+1.0)/(2.0*df));
+                    dC[nD + d] += (Y[nD + d] - Y[mD + d]) * mult;
                     //dC[nD + d] += (Y[nD + d] - Y[mD + d]) * mult;
                 }
             }
