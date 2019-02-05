@@ -519,7 +519,7 @@ int TSNE::run(double *X, int N, int D, double *Y, int no_dims, double perplexity
     END_TIME("Computing Error");
             
             std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
-            printf("Iteration %d (50 iterations in %.2f seconds), cost %e\n", iter+1, std::chrono::duration_cast<std::chrono::milliseconds>(now-start_time).count()/(float)1000.0, C);
+            printf("Iteration %d (50 iterations in %.2f seconds), cost %.3f\n", iter+1, std::chrono::duration_cast<std::chrono::milliseconds>(now-start_time).count()/(float)1000.0, C);
             start_time = std::chrono::steady_clock::now();
         }
     }
@@ -937,28 +937,12 @@ void TSNE::computeExactGradient(double *P, double *Y, int N, int D, double *dC, 
     auto *Q = (double *) malloc(N * N * sizeof(double));
     if (Q == nullptr) throw std::bad_alloc();
 
-
-//    nN = 0;
-//    int nD = 0;
-//    for (int n = 0; n < N; n++) {
-//        int mD = 0;
-//        for (int m = 0; m < N; m++) {
-//            float p_ij = 
-//P[nN + m]
-//                
-//                double mult = (P[nN + m] - (Q[nN + m] / sum_Q)) * Q[nN + m];
-//
-//        }
-//    }
-
-
-
     double sum_Q = .0;
     int nN = 0;
     for (int n = 0; n < N; n++) {
         for (int m = 0; m < N; m++) {
             if (n != m) {
-                Q[nN + m] = 1.0 / pow(1.0 + DD[nN + m]/(double)df, (df));
+                Q[nN + m] = 1.0 / pow(1.0 + DD[nN + m]/(double)df, df);
                 sum_Q += Q[nN + m];
             }
         }
@@ -975,7 +959,6 @@ void TSNE::computeExactGradient(double *P, double *Y, int N, int D, double *dC, 
                 double mult = (P[nN + m] - (Q[nN + m] / sum_Q)) * pow(Q[nN + m], 1.0/df);
                 for (int d = 0; d < D; d++) {
                     dC[nD + d] += (Y[nD + d] - Y[mD + d]) * mult;
-                    //dC[nD + d] += (Y[nD + d] - Y[mD + d]) * mult;
                 }
             }
             mD += D;
@@ -1005,7 +988,7 @@ double TSNE::evaluateError(double *P, double *Y, int N, int D, double df) {
     for (int n = 0; n < N; n++) {
         for (int m = 0; m < N; m++) {
             if (n != m) {
-                Q[nN + m] = 1.0 / pow(1.0 + DD[nN + m]/(double)df, (df+1.0)/(double)(2.0));
+                Q[nN + m] = 1.0 / pow(1.0 + DD[nN + m]/(double)df, df);
                 sum_Q += Q[nN + m];
             } else Q[nN + m] = DBL_MIN;
         }
@@ -1028,7 +1011,8 @@ double TSNE::evaluateError(double *P, double *Y, int N, int D, double df) {
     free(Q);
     return C;
 }
-// Evaluate t-SNE cost function (approximately) using FFT
+
+// Debugging function
 double TSNE::printQs(double *Y, int N, int D,unsigned int nthreads, double df) {
     // Get estimate of normalization term
 
