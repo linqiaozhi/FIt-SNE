@@ -812,6 +812,7 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
 
     // Make the negative term, or F_rep in the equation 3 of the paper
     END_TIME("Attractive Forces");
+
     double *neg_f = new double[N * 2];
     for (unsigned int i = 0; i < N; i++) {
         double h2 = SquaredPotentialsQij[i * squared_n_terms];
@@ -827,25 +828,15 @@ void TSNE::computeFftGradient(double *P, unsigned int *inp_row_P, unsigned int *
     }
 
     this->current_sum_Q = sum_Q;
-        FILE *fp = nullptr;
+
+/*        FILE *fp = nullptr;
         char buffer[500];
         sprintf(buffer, "temp/fft_gradient%d.txt", itTest);
         fp = fopen(buffer, "w"); // Open file for writing
         for (int i = 0; i < N; i++) {
                 fprintf(fp, "%d,%.12e,%.12e\n", i, neg_f[i * 2] , neg_f[i * 2 + 1]);
         }
-        fclose(fp);
-
-
-
-
-
-
-
-
-
-
-
+        fclose(fp);*/
 
     delete[] pos_f;
     delete[] neg_f;
