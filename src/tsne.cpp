@@ -928,13 +928,18 @@ void TSNE::computeExactGradient(double *P, double *Y, int N, int D, double *dC, 
     auto *Q = (double *) malloc(N * N * sizeof(double));
     if (Q == nullptr) throw std::bad_alloc();
 
+    auto *Qpow = (double *) malloc(N * N * sizeof(double));
+    if (Qpow == nullptr) throw std::bad_alloc();
+
     double sum_Q = .0;
     int nN = 0;
     for (int n = 0; n < N; n++) {
         for (int m = 0; m < N; m++) {
             if (n != m) {
-                Q[nN + m] = 1.0 / pow(1.0 + DD[nN + m]/(double)df, df);
-                sum_Q += Q[nN + m];
+                //Q[nN + m] = 1.0 / pow(1.0 + DD[nN + m]/(double)df, df);
+                Q[nN + m] = 1.0 / (1.0 + DD[nN + m]/(double)df);
+                Qpow[nN + m] = pow(Q[nN + m], df);
+                sum_Q += Qpow[nN + m];
             }
         }
         nN += N;
@@ -947,7 +952,7 @@ void TSNE::computeExactGradient(double *P, double *Y, int N, int D, double *dC, 
         int mD = 0;
         for (int m = 0; m < N; m++) {
             if (n != m) {
-                double mult = (P[nN + m] - (Q[nN + m] / sum_Q)) * pow(Q[nN + m], 1.0/df);
+                double mult = (P[nN + m] - (Qpow[nN + m] / sum_Q)) * (Q[nN + m]);
                 for (int d = 0; d < D; d++) {
                     dC[nD + d] += (Y[nD + d] - Y[mD + d]) * mult;
                 }
@@ -958,6 +963,7 @@ void TSNE::computeExactGradient(double *P, double *Y, int N, int D, double *dC, 
         nD += D;
     }
     free(Q);
+    free(Qpow);
     free(DD);
 }
 
@@ -979,7 +985,9 @@ double TSNE::evaluateError(double *P, double *Y, int N, int D, double df) {
     for (int n = 0; n < N; n++) {
         for (int m = 0; m < N; m++) {
             if (n != m) {
-                Q[nN + m] = 1.0 / pow(1.0 + DD[nN + m]/(double)df, df);
+                //Q[nN + m] = 1.0 / pow(1.0 + DD[nN + m]/(double)df, df);
+                Q[nN + m] = 1.0 / (1.0 + DD[nN + m]/(double)df);
+                Q[nN +m ] = pow(Q[nN +m ], df);
                 sum_Q += Q[nN + m];
             } else Q[nN + m] = DBL_MIN;
         }
